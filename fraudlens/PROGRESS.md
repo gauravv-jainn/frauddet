@@ -50,3 +50,21 @@ Machine: 32 logical CPUs, Windows 11, Python 3.11.15 (installed with uv; system 
 - Risk band from calibrated probability: Medium starts at the money threshold (config `bands.medium: null`), High 0.30, Critical 0.70; one-sentence summary and action (approve / step-up / hold for review / block and call).
 - What-if: re-score with edited amount, hour or merchant distance (distance moves the merchant along the same bearing); velocity features are recomputed from the card's history.
 - Tests (`tests/test_explain.py`): SHAP + base value reconstructs the LightGBM raw margin (atol 1e-6); every reason's features contribute in the stated direction above the cut-off; what-if with no edits equals batch scoring.
+
+## M5 - Streamlit app (done)
+- `streamlit run app/streamlit_app.py` (st.navigation over `app/views/`; the folder is not called `pages/` because Streamlit's auto-discovery bypassed the navigation on direct URLs).
+- Six pages: Dashboard, Check a transaction (gauge, band, reason cards, what-if), Batch scoring (schema validation, risk-ranked table, CSV download), Case queue (SQLite, Confirm/Genuine/Escalate, audit trail, agreement stats), Model report, Training Lab (timeline, trial history, Retrain subprocess with live log tail; button disabled while a run is active).
+- Sidebar threshold (validated value by default) and review cost update every page. Theme in `.streamlit/config.toml`; server bound to localhost.
+- Fixes made after looking at the pages: KPI values were truncated at 1280 px (compact EUR format, shorter labels), the reliability chart used equal-count bins that all sat near 0 (now fixed probability bins), the cost curve needed a log y-axis, and the Retrain button briefly showed the previous run as finished (status is now written at launch).
+- Batch scoring of a CSV round-trip of 500 test rows reproduces the stored test scores exactly (max abs diff 0.0).
+
+## M6 - Agency touches (done)
+- P1: all thresholds/costs/bands in `configs/default.yaml`; Demo mode streams test transactions in time order into the case queue.
+- P2: FastAPI `POST /score` (`api/main.py`) with `X-API-Key` header (env `FRAUDLENS_API_KEY`, constant-time compare), returns probability, band, flag, action, summary and reasons; `Dockerfile` + `requirements-api.txt`. API scores equal the offline scores (tested). Docker image not built here (Docker is not part of this setup).
+
+## M7 - Verification (done)
+- `pytest`: 23 passed (features/leakage 6, explanations 5, cases 1, reproducibility 1, app click-through 7, API 3).
+- AppTest drives all 6 pages headless (what-if submit, manual form, batch sample, queue add/confirm/demo stream) with no exceptions, and checks dashboard KPIs against `artifacts/metrics.json`; a direct test asserts the app's metric dict equals `metrics.json["test"]["at_threshold"]` exactly.
+- Final full training run repeated in the terminal after the reliability-table change: every metric identical to the first full run (full-scale reproducibility).
+- Playwright screenshots of all pages in `docs/screenshots/` (`scripts/screenshots.py`), reviewed visually.
+- README results table generated from `metrics.json` by `scripts/results_table.py`.
