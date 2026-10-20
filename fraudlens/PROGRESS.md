@@ -42,3 +42,11 @@ Machine: 32 logical CPUs, Windows 11, Python 3.11.15 (installed with uv; system 
 - Money threshold (review cost 5): **0.1111** chosen on validation.
 - **Test (once):** PR-AUC 0.9682 (95% bootstrap CI 0.9620-0.9743, 1000 resamples), ROC-AUC 0.9978, recall 0.956, precision 0.855, false alarms 6.3 per 10k genuine, flagged 2,397. Fraud amount 1,133,325; cost with model 31,104; **saved 1,102,221** vs no model.
 - Reproducibility test (`tests/test_train_repro.py`) trains twice with `--fast` and compares metrics. Only difference found was the last float bit (1e-16) of random-forest ROC-AUC from parallel averaging, so the test compares to 10 decimals.
+
+## M4 - Explanations (done)
+- `fraudkit/explain.py`: SHAP TreeExplainer (log-odds) per transaction. Features are grouped (e.g. amt+log_amt, 1h/24h velocity+24h spend, geo-speed+impossible-travel) so each fact appears once; groups below 0.05 log-odds are not reported.
+- Up to 4 raising and 2 lowering reasons, worded from the actual values (amount vs card average, amount vs card's category average, night time, velocity, minutes since previous, km and km/h for travel, first use of a category, merchant fraud history).
+- Wording follows the value, not just the SHAP sign (a small amount that raises risk says "very small amount ... test charges", not "large amount").
+- Risk band from calibrated probability: Medium starts at the money threshold (config `bands.medium: null`), High 0.30, Critical 0.70; one-sentence summary and action (approve / step-up / hold for review / block and call).
+- What-if: re-score with edited amount, hour or merchant distance (distance moves the merchant along the same bearing); velocity features are recomputed from the card's history.
+- Tests (`tests/test_explain.py`): SHAP + base value reconstructs the LightGBM raw margin (atol 1e-6); every reason's features contribute in the stated direction above the cut-off; what-if with no edits equals batch scoring.
