@@ -13,7 +13,7 @@ model:
 costs:
   review_cost: 5.0          # cost of an analyst reviewing one flagged transaction
 bands:                      # calibrated probability lower bounds
-  medium: 0.05
+  medium: null              # null = the money-optimal decision threshold, so "flagged" == Medium or above
   high: 0.30
   critical: 0.70
 explain:
