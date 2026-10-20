@@ -17,3 +17,9 @@ Machine: 32 logical CPUs, Windows 11, Python 3.11.15 (installed with uv; system 
 | test | 555,719 | 924 | 2,145 | 0.3860% |
 
 - Dropped columns not used by the model: first, last, street, zip, unix_time. The `fraud_` prefix Sparkov puts on every merchant name is stripped.
+
+## M2 - Leakage-free features (done)
+- `fraudkit/features.py`: 19 numeric + 2 categorical features. Card-history features (velocity 1h/24h, 24h spend, amount vs expanding card mean and card-category mean, hours since previous, geo-speed + impossible-travel flag, first time in category, history length) use only strictly earlier rows of the same card.
+- Merchant: smoothed target encoding, out-of-fold on the fit split, mapping fitted on the fit split only.
+- Tests (`tests/test_features.py`, 6 pass): truncation test (features of row i unchanged when all later rows removed), future-perturbation test, history-scoring equals batch, first-row semantics, haversine sanity.
+- Full build on 1.85M rows: 2.7 s. Observed signal on train: fraud median amount = 5.23x card mean (genuine 0.66x); night fraud rate 2.09% vs 0.12% day. Distance home->merchant has no signal in this simulator (medians 78 km for both).
