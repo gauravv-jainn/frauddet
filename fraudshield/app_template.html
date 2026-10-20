@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FraudShield: Card Fraud Operations Console</title>
+<style>
+:root{--bg:#f3f5f9;--card:#fff;--ink:#0e1a2b;--mute:#5b6a80;--line:#e2e7ef;--brand:#0b6e7f;--brand2:#12a0b8;--bad:#d4372e;--badbg:#fdecea;--ok:#15864f;--okbg:#e5f5ec;--warn:#b86e00;--warnbg:#fff3dd;--ink2:#0a2540;--shadow:0 1px 2px rgba(14,26,43,.06),0 10px 28px rgba(14,26,43,.06)}
+@media(prefers-color-scheme:dark){:root{--bg:#0a111c;--card:#121b2a;--ink:#e7eef9;--mute:#90a1ba;--line:#223048;--brand:#38b6ca;--brand2:#62cde0;--bad:#ff6a60;--badbg:#3a1b1e;--ok:#4acb8b;--okbg:#12301f;--warn:#f2ac43;--warnbg:#38290f;--ink2:#e7eef9;--shadow:none}}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+header{background:linear-gradient(135deg,#08213a,#0b6e7f);color:#fff}
+.top{display:flex;align-items:center;gap:18px;padding:14px 0;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:20px}.logo svg{width:28px;height:28px}
+.pill{font-size:12px;background:rgba(255,255,255,.16);padding:4px 10px;border-radius:99px;margin-left:auto}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav a{color:#cfe4ea;text-decoration:none;padding:8px 14px;border-radius:9px;font-weight:600;font-size:14px;cursor:pointer}
+nav a:hover{background:rgba(255,255,255,.1)}nav a.on{background:#fff;color:#08213a}
+.ctl{position:sticky;top:0;z-index:5;background:var(--card);border-bottom:1px solid var(--line)}
+.ctl .wrap{display:flex;gap:18px;align-items:center;padding-top:10px;padding-bottom:10px;flex-wrap:wrap;font-size:14px}
+.ctl label{display:flex;gap:8px;align-items:center}
+input[type=range]{width:210px}
+input[type=number],select,textarea{font:inherit;padding:5px 8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+main{padding:20px 0 40px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:18px}
+.card{overflow-x:auto}.card h3{margin:0 0 4px;font-size:16px}.sub{color:var(--mute);font-size:13px;margin-bottom:10px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.kpi .n{font-size:27px;font-weight:700;letter-spacing:-.3px}.kpi .l{color:var(--mute);font-size:13px}.kpi .d{font-size:12.5px;color:var(--mute);margin-top:2px}
+.kpi.bad .n{color:var(--bad)}.kpi.ok .n{color:var(--ok)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}.g3{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;align-items:start}
+.mt{margin-top:14px}.mute{color:var(--mute)}.small{font-size:13px}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:9px;cursor:pointer}
+button:hover{border-color:var(--brand)}button.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+button.bad{background:var(--bad);color:#fff;border-color:var(--bad)}button.sm{padding:4px 10px;font-size:13px}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:26px 16px;text-align:center;cursor:pointer}
+.drop:hover,.drop.over{border-color:var(--brand);background:rgba(11,110,127,.06)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{text-align:left;color:var(--mute);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px;padding:7px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card)}
+td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+tr.r{cursor:pointer}tr.r:hover{background:rgba(11,110,127,.07)}tr.sel{background:rgba(11,110,127,.14)}
+.scroll{max-height:520px;overflow:auto}
+.badge{display:inline-block;padding:2px 10px;border-radius:99px;font-weight:600;font-size:12px}
+.badge.f{background:var(--badbg);color:var(--bad)}.badge.l{background:var(--okbg);color:var(--ok)}.badge.m{background:var(--warnbg);color:var(--warn)}
+.bar{display:inline-block;width:80px;height:8px;background:var(--line);border-radius:6px;vertical-align:middle;margin-right:8px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ok)}.bar.hi i{background:var(--bad)}.bar.md i{background:var(--warn)}
+.verdict{border-radius:12px;padding:14px;margin-bottom:12px}.verdict.f{background:var(--badbg);border:1px solid var(--bad)}.verdict.l{background:var(--okbg);border:1px solid var(--ok)}.verdict.m{background:var(--warnbg);border:1px solid var(--warn)}
+.verdict h3{margin:0;font-size:21px}.verdict.f h3{color:var(--bad)}.verdict.l h3{color:var(--ok)}.verdict.m h3{color:var(--warn)}
+.contrib{display:grid;grid-template-columns:74px 1fr 54px;gap:8px;align-items:center;font-size:13px;margin:6px 0 0}
+.cb{height:12px;position:relative;background:var(--line);border-radius:4px}.cb i{position:absolute;top:0;height:100%;border-radius:4px}.cb:after{content:"";position:absolute;left:50%;top:-2px;width:1px;height:16px;background:var(--mute)}
+.err{background:var(--badbg);color:var(--bad);border:1px solid var(--bad);padding:10px 14px;border-radius:10px;margin-top:12px}
+.warnbox{background:var(--warnbg);color:var(--warn);border:1px solid var(--warn);padding:10px 14px;border-radius:10px;margin-top:12px}
+.feed{max-height:380px;overflow:auto}
+.fi{display:grid;grid-template-columns:62px 80px 1fr auto;gap:10px;align-items:center;padding:7px 4px;border-bottom:1px solid var(--line);font-size:13.5px}
+.fi.new{animation:fl .8s}@keyframes fl{from{background:rgba(212,55,46,.22)}to{background:transparent}}
+.q{border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:9px}
+.q.done{opacity:.75}
+.wi{display:grid;grid-template-columns:66px 1fr 62px;gap:8px;align-items:center;font-size:13px;margin:4px 0}.wi input{width:100%}
+code{background:var(--line);padding:1px 6px;border-radius:5px;font-size:12.5px}
+svg text{fill:var(--mute);font-size:11px}
+.hint{font-size:12.5px;color:var(--mute)}
+footer{color:var(--mute);font-size:13px;padding-bottom:30px}
+details summary{cursor:pointer;color:var(--brand);font-weight:600}
+@media(max-width:900px){.g2>*,.g3>*{min-width:0}.scroll{overflow-x:auto}.top .pill{margin-left:0}.drop{padding:18px 10px}.kpis{grid-template-columns:repeat(2,1fr)}.g2,.g3{grid-template-columns:1fr}input[type=range]{width:140px}}
+</style>
+</head>
+<body>
+<header><div class="wrap"><div class="top">
+  <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linejoin="round"><path d="M12 2l8 3v6c0 5-3.4 9.3-8 11-4.6-1.7-8-6-8-11V5l8-3z"/><path d="M8.5 12.2l2.4 2.4 4.6-5" stroke-linecap="round"/></svg>FraudShield</div>
+  <nav id="nav"><a data-p="overview">Overview</a><a data-p="check">Check transactions</a><a data-p="live">Live monitor</a><a data-p="insights">Model insights</a><a data-p="about">About</a></nav>
+  <span class="pill" id="pill"></span></div></div></header>
+<div class="ctl"><div class="wrap">
+  <label><b>Flag when risk ≥</b><input type="range" id="thr" min="0" max="160"><b id="thrV"></b></label>
+  <label>Review cost € <input type="number" id="rc" min="0" max="1000" step="1" style="width:70px"></label>
+  <button class="sm" id="rstThr">Use validated threshold</button>
+  <span class="hint" id="thrHint"></span>
+</div></div>
+<main><div class="wrap" id="page"></div></main>
+<div class="wrap"><footer>Mini project based on Tanouz et al., ICICCS 2021. Gaurav Jain (D12B, Roll 20) and Palash Matani (D12B, Roll 38), VESIT Mumbai. Educational demo, not a real fraud screening system.</footer></div>
+
+<script>
+const M = __DATA_JSON__;
+const $ = id => document.getElementById(id);
+const NF = M.feats.length, A = M.platt[0], B = M.platt[1], GRID = M.grid.map(z => 1/(1+Math.exp(-z)));
+const TF = M.trees.map(t => ({f:t.f, t:t.t.map(Math.fround), y:t.y, n:t.n, m:t.m, v:t.v, c:t.c}));
+const S = {idx: M.val_idx, rc: M.rc, page: 'overview', rows: [], sel: -1, hasClass: false, wi: null};
+const eur = (v, d=0) => (v < 0 ? '-€' : '€') + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits:d, minimumFractionDigits:d});
+const pct = (v, d=1) => (100*v).toFixed(d) + '%';
+const num = (v, d=2) => Number.isFinite(v) ? v.toLocaleString(undefined, {minimumFractionDigits:d, maximumFractionDigits:d}) : 'n/a';
+const sig = z => 1/(1+Math.exp(-z));
+const thr = () => GRID[S.idx];
+const fmtP = p => p >= .1 ? (100*p).toFixed(0)+'%' : p >= .01 ? (100*p).toFixed(1)+'%' : p >= .001 ? (100*p).toFixed(2)+'%' : (100*p).toFixed(3)+'%';
+
+/* ============ model: trees -> margin -> Platt-calibrated probability; exact TreeSHAP ============ */
+function toVec(o){
+  const ang = ((o.Time % 86400) / 86400) * 2 * Math.PI;
+  return M.feats.map(n => n === 'hour_sin' ? Math.sin(ang) : n === 'hour_cos' ? Math.cos(ang) : o[n]);
+}
+function score(o, wantShap){
+  const x = new Float32Array(toVec(o)); let margin = M.base, bias = M.base; const phi = wantShap ? new Float64Array(NF) : null;
+  for (const t of TF){
+    let k = 0;
+    while (t.f[k] >= 0){ const v = x[t.f[k]]; k = Number.isNaN(v) ? t.m[k] : (v < t.t[k] ? t.y[k] : t.n[k]); }
+    margin += t.v[k];
+    if (wantShap){ bias += t.v[0]; treeShap(t, x, phi); }
+  }
+  const z = A*margin + B;
+  return {p: sig(z), z, margin, phi, bias: A*bias + B};
+}
+function treeShap(t, x, phi){
+  const ext = (m, pz, po, pi) => { const l = m.length; m.push({d:pi, z:pz, o:po, w: l === 0 ? 1 : 0});
+    for (let i = l-1; i >= 0; i--){ m[i+1].w += po*m[i].w*(i+1)/(l+1); m[i].w = pz*m[i].w*(l-i)/(l+1); } };
+  const unwind = (m, i) => { const l = m.length-1, o = m[i].o, z = m[i].z, r = m.map(e => ({...e})); let n = m[l].w;
+    for (let j = l-1; j >= 0; j--){ if (o !== 0){ const tmp = r[j].w; r[j].w = n*(l+1)/((j+1)*o); n = tmp - r[j].w*z*(l-j)/(l+1); } else r[j].w = r[j].w*(l+1)/(z*(l-j)); }
+    for (let j = i; j < l; j++){ r[j].d = r[j+1].d; r[j].z = r[j+1].z; r[j].o = r[j+1].o; } r.pop(); return r; };
+  const uws = (m, i) => { const l = m.length-1, o = m[i].o, z = m[i].z; let n = m[l].w, tot = 0;
+    for (let j = l-1; j >= 0; j--){ if (o !== 0){ const tmp = n*(l+1)/((j+1)*o); tot += tmp; n = m[j].w - tmp*z*(l-j)/(l+1); } else tot += (m[j].w/z)/((l-j)/(l+1)); } return tot; };
+  const rec = (j, m, pz, po, pi) => {
+    m = m.map(e => ({...e})); ext(m, pz, po, pi);
+    if (t.f[j] < 0){ for (let i = 1; i < m.length; i++) phi[m[i].d] += uws(m, i)*(m[i].o - m[i].z)*t.v[j]; return; }
+    const v = x[t.f[j]], hot = Number.isNaN(v) ? t.m[j] : (v < t.t[j] ? t.y[j] : t.n[j]), cold = hot === t.y[j] ? t.n[j] : t.y[j];
+    let iz = 1, io = 1; const k = m.findIndex(e => e.d === t.f[j]);
+    if (k >= 0){ iz = m[k].z; io = m[k].o; m = unwind(m, k); }
+    rec(hot, m, iz*t.c[hot]/t.c[j], io, t.f[j]); rec(cold, m, iz*t.c[cold]/t.c[j], 0, t.f[j]);
+  };
+  rec(0, [], 1, 1, -1);
+}
+const band = p => p >= thr() ? 'f' : p >= thr()/4 ? 'm' : 'l';
+const bandTxt = {f:'Flag for review', m:'Watch', l:'Looks genuine'};
+
+/* ============ ops maths from the held-out test table ============ */
+function ops(i){ const [tp,fp,fn,tn,caught,missed] = M.test.tab[i]; const rc = S.rc; const loss = missed + rc*(tp+fp);
+  return {tp,fp,fn,tn,caught,missed,loss, net: M.test.base_loss - loss, pos: tp+fn, neg: fp+tn, prec: tp+fp ? tp/(tp+fp) : NaN, rec: tp/(tp+fn)}; }
+function bestIdx(){ let b = 0, bl = Infinity; M.test.tab.forEach((r,i) => { const l = r[5] + S.rc*(r[0]+r[1]); if (l < bl){ bl = l; b = i; } }); return b; }
+
+/* ============ tiny SVG chart helpers ============ */
+function axes(w,h,p,xt,yt,xl,yl){
+  let s = `<line x1="${p.l}" y1="${h-p.b}" x2="${w-p.r}" y2="${h-p.b}" stroke="var(--line)"/><line x1="${p.l}" y1="${p.t}" x2="${p.l}" y2="${h-p.b}" stroke="var(--line)"/>`;
+  xt.forEach(([v,lab]) => { const x = p.l + v*(w-p.l-p.r); s += `<line x1="${x}" y1="${h-p.b}" x2="${x}" y2="${h-p.b+4}" stroke="var(--mute)"/><text x="${x}" y="${h-p.b+16}" text-anchor="middle">${lab}</text>`; });
+  yt.forEach(([v,lab]) => { const y = h-p.b - v*(h-p.t-p.b); s += `<line x1="${p.l-4}" y1="${y}" x2="${w-p.r}" y2="${y}" stroke="var(--line)"/><text x="${p.l-7}" y="${y+4}" text-anchor="end">${lab}</text>`; });
+  if (xl) s += `<text x="${(p.l+w-p.r)/2}" y="${h-4}" text-anchor="middle">${xl}</text>`;
+  if (yl) s += `<text transform="translate(12 ${(p.t+h-p.b)/2}) rotate(-90)" text-anchor="middle">${yl}</text>`;
+  return s;
+}
+function lineChart(w,h,series,o){
+  const p = {l:50,r:14,t:10,b:34}, X = v => p.l + v*(w-p.l-p.r), Y = v => h-p.b - v*(h-p.t-p.b);
+  let s = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img">` + axes(w,h,p,o.xt||[],o.yt||[],o.xl,o.yl);
+  series.forEach(se => { s += `<polyline fill="none" stroke="${se.c}" stroke-width="2" points="${se.pts.map(q => X(q[0]).toFixed(1)+','+Y(q[1]).toFixed(1)).join(' ')}"/>`; });
+  (o.marks||[]).forEach(m => { s += `<circle cx="${X(m[0])}" cy="${Y(m[1])}" r="5" fill="${m[2]}" stroke="#fff" stroke-width="1.5"/>`; });
+  (o.vlines||[]).forEach(m => { s += `<line x1="${X(m[0])}" y1="${p.t}" x2="${X(m[0])}" y2="${h-p.b}" stroke="${m[1]}" stroke-dasharray="4 3"/>`; });
+  return s + '</svg>';
+}
+function legend(items){ return '<div class="row small" style="gap:14px;margin-top:4px">' + items.map(i => `<span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${i[0]};margin-right:5px"></i>${i[1]}</span>`).join('') + '</div>'; }
+
+/* ============ pages ============ */
+function pgOverview(){
+  const o = ops(S.idx), T = M.test, ci = T.ci;
+  const per10k = Math.round(10000*o.fp/o.neg);
+  let h = `<div class="kpis">
+    <div class="kpi"><div class="l">PR-AUC (held-out future)</div><div class="n">${T.pr_auc.toFixed(3)}</div><div class="d">95% CI ${ci[0].toFixed(3)} to ${ci[1].toFixed(3)}</div></div>
+    <div class="kpi ok"><div class="l">Fraud caught</div><div class="n">${o.tp} / ${o.pos}</div><div class="d">${pct(o.rec)} recall, ${eur(o.caught)} stopped</div></div>
+    <div class="kpi bad"><div class="l">False alarms</div><div class="n">${o.fp.toLocaleString()}</div><div class="d">${per10k.toLocaleString()} per 10,000 genuine · precision ${Number.isFinite(o.prec)?pct(o.prec):'n/a'}</div></div>
+    <div class="kpi ${o.net>=0?'ok':'bad'}"><div class="l">Net saving vs no model</div><div class="n">${eur(o.net)}</div><div class="d">fraud exposure ${eur(T.base_loss)}, review cost ${eur(S.rc*(o.tp+o.fp))}</div></div></div>
+  <div class="g2 mt">
+   <div class="card"><h3>Precision-recall (test)</h3><div class="sub">Dot = current threshold. Higher and further right is better.</div><div id="chPR"></div></div>
+   <div class="card"><h3>Where fraud and genuine scores sit</h3><div class="sub">Counts on a log scale by calibrated risk. Dashed line = threshold. The overlap is where the mistakes come from.</div><div id="chHist"></div>${legend([['#2aa6b8','Genuine'],['var(--bad)','Fraud']])}</div>
+  </div>
+  <div class="g2 mt">
+   <div class="card"><h3>Confusion matrix at this threshold</h3><div class="sub">${M.test.n.toLocaleString()} transactions in the future test window</div>
+     <table style="max-width:420px"><tr><th></th><th>Flagged</th><th>Not flagged</th></tr>
+     <tr><td><b>Actually fraud</b></td><td><span class="badge l">${o.tp} caught</span></td><td><span class="badge f">${o.fn} missed (${eur(o.missed)})</span></td></tr>
+     <tr><td><b>Actually genuine</b></td><td><span class="badge m">${o.fp.toLocaleString()} false alarms</span></td><td>${o.tn.toLocaleString()}</td></tr></table></div>
+   <div class="card"><h3>How the numbers were earned</h3><div class="small mute">
+     <p style="margin:0 0 6px"><b>Past to future split.</b> Train on the first 60% of transactions by time, tune and calibrate on the next 20%, test on the final 20%. Nothing from the future leaks into training.</p>
+     <p style="margin:0 0 6px"><b>Threshold validated, not peeked.</b> The default threshold was chosen on the validation window to minimise euros lost. Press "Best on test" to see the optimistic version.</p>
+     <p style="margin:0"><button class="sm" id="btnBest">Best on test for this review cost</button></p></div></div>
+  </div>`;
+  $('page').innerHTML = h;
+  const pr = T.pr_curve.map(q => [q[0], q[1]]);
+  $('chPR').innerHTML = lineChart(520,260,[{pts:pr,c:'#0b8aa0'}],{xt:[0,.25,.5,.75,1].map(v=>[v,v]),yt:[0,.25,.5,.75,1].map(v=>[v,v]),xl:'recall',yl:'precision',marks:[[o.rec, Number.isFinite(o.prec)?o.prec:0, 'var(--bad)']]});
+  const hs = T.hist, bins = hs.bins, mx = Math.log1p(Math.max(...hs.genuine, ...hs.fraud)); const w=520,hh=260,p={l:50,r:14,t:10,b:34};
+  let svg = `<svg viewBox="0 0 ${w} ${hh}" width="100%">` + axes(w,hh,p,[-9,-4.6,0,4.6,9].map(z=>[(z+12)/24, fmtP(sig(z))]),[],'calibrated risk',null);
+  const bw = (w-p.l-p.r)/(bins.length-1);
+  hs.genuine.forEach((c,i) => { const hgt = Math.log1p(c)/mx*(hh-p.t-p.b); svg += `<rect x="${p.l+i*bw}" y="${hh-p.b-hgt}" width="${bw-1}" height="${hgt}" fill="#2aa6b8" opacity=".75"/>`; });
+  hs.fraud.forEach((c,i) => { const hgt = Math.log1p(c)/mx*(hh-p.t-p.b); svg += `<rect x="${p.l+i*bw+bw*.2}" y="${hh-p.b-hgt}" width="${bw*.6}" height="${hgt}" fill="var(--bad)" opacity=".9"/>`; });
+  const tz = Math.log(thr()/(1-thr())), tx = p.l + (tz+12)/24*(w-p.l-p.r);
+  svg += `<line x1="${tx}" y1="${p.t}" x2="${tx}" y2="${hh-p.b}" stroke="var(--ink)" stroke-dasharray="4 3"/></svg>`;
+  $('chHist').innerHTML = svg;
+  $('btnBest').onclick = () => { setIdx(bestIdx()); };
+}
+
+function pgCheck(){
+  $('page').innerHTML = `<div class="card"><h3>Check transactions</h3><div class="sub">Upload a file or paste rows. Each one is scored here in your browser; nothing leaves this page.</div>
+    <div class="drop" id="drop"><b>Drop a CSV here, or click to choose</b><br><small class="mute">Columns: <code>Time</code>, <code>V1</code>–<code>V28</code>, <code>Amount</code>. Optional <code>Class</code> (1 = fraud) lets the app mark each verdict right or wrong.</small><input type="file" id="file" accept=".csv,.txt,text/csv" hidden></div>
+    <div class="row mt"><button class="primary" id="bSample">Try the sample file</button><button id="bDl">Download sample CSV</button><button id="bRF">Random real fraud</button><button id="bRG">Random real genuine</button><button id="bPaste">Paste rows</button></div>
+    <div id="pasteBox" hidden class="mt"><textarea id="paste" rows="4" style="width:100%;font:12.5px monospace" placeholder="Time,V1,...,V28,Amount"></textarea><div class="mt"><button class="primary" id="bScore">Score pasted rows</button></div></div><div id="msg"></div></div>
+    <div id="res" hidden></div>`;
+  const drop = $('drop'), fi = $('file');
+  drop.onclick = () => fi.click(); fi.onchange = e => { const f = e.target.files[0]; if (f) f.text().then(loadCSV); fi.value = ''; };
+  ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.add('over');}));
+  ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => {e.preventDefault(); drop.classList.remove('over');}));
+  drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) f.text().then(loadCSV); });
+  const csv = sampleCSV();
+  $('bSample').onclick = () => loadCSV(csv.all); $('bDl').onclick = () => dl('sample_transactions.csv', csv.all);
+  $('bRF').onclick = () => loadCSV(csv.head + '\n' + pick(csv.fraud)); $('bRG').onclick = () => loadCSV(csv.head + '\n' + pick(csv.gen));
+  $('bPaste').onclick = () => { $('pasteBox').hidden = !$('pasteBox').hidden; }; $('bScore').onclick = () => loadCSV($('paste').value);
+  if (S.rows.length) renderRes();
+}
+const pick = a => a[Math.floor(Math.random()*a.length)];
+function sampleCSV(){
+  const c = M.stream.cols, ci = c.indexOf('Class'), head = c.join(',');
+  const rows = M.stream.rows, fr = rows.filter(r => r[ci] === 1).map(r => r.join(',')), ge = rows.filter(r => r[ci] === 0).map(r => r.join(','));
+  const mix = fr.slice(0, 12).concat(ge.slice(0, 28)).sort(() => Math.random() - .5);
+  return {head, fraud: fr, gen: ge, all: head + '\n' + mix.join('\n')};
+}
+function dl(name, text){ const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], {type:'text/csv'})); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+function parseCSV(text){
+  text = text.replace(/^﻿/, '').trim(); const first = text.split(/\r?\n/, 1)[0];
+  const d = [',',';','\t'].map(c => [c, first.split(c).length]).sort((a,b) => b[1]-a[1])[0][0];
+  const out = []; let r = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++){ const c = text[i];
+    if (q){ if (c === '"'){ if (text[i+1] === '"'){ cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true; else if (c === d){ r.push(cur); cur = ''; } else if (c === '\n'){ r.push(cur); out.push(r); r = []; cur = ''; } else if (c !== '\r') cur += c; }
+  r.push(cur); out.push(r); return out.filter(r => r.some(c => c.trim() !== ''));
+}
+const RAW = ['Time'].concat(M.vcols, ['Amount']);
+function loadCSV(text){
+  $('msg').innerHTML = ''; let tbl; try { tbl = parseCSV(text); } catch(e){ return err('Could not read that as CSV.'); }
+  if (!tbl.length) return err('The file is empty.');
+  let head = tbl[0].map(s => s.trim()), body = tbl.slice(1);
+  if (head.every(h => h !== '' && !isNaN(Number(h))) && (head.length === 30 || head.length === 31)){ head = head.length === 31 ? RAW.concat(['Class']) : RAW.slice(); body = tbl; }
+  const lo = {}; head.forEach((h,i) => lo[h.toLowerCase()] = i);
+  const miss = RAW.filter(f => !(f.toLowerCase() in lo));
+  if (miss.length) return err('Missing column(s): ' + miss.join(', ') + '. Use "Download sample CSV" to see the layout.');
+  const hasC = 'class' in lo; const rows = []; let bad = 0, blank = 0, trunc = false;
+  body.forEach((cells, li) => {
+    if (rows.length >= 5000){ trunc = true; return; }
+    const o = {}; let ok = true, hb = false;
+    RAW.forEach(f => { const s = (cells[lo[f.toLowerCase()]] ?? '').trim(); if (s === ''){ o[f] = NaN; hb = true; } else { const v = Number(s); if (Number.isNaN(v)) ok = false; o[f] = v; } });
+    if (!ok){ bad++; return; } if (hb) blank++;
+    let cls = null; if (hasC){ const s = (cells[lo['class']] ?? '').trim(); cls = s === '' ? null : Number(s); }
+    rows.push({i: li+1, o, cls, ...score(o, false)});
+  });
+  if (!rows.length) return err('No valid numeric rows found.');
+  const notes = []; if (bad) notes.push(bad + ' row(s) skipped (non-numeric value).'); if (blank) notes.push(blank + ' row(s) have blanks, treated as missing.'); if (trunc) notes.push('Only the first 5,000 rows were scored.');
+  if (notes.length) $('msg').innerHTML = '<div class="warnbox">' + notes.join(' ') + '</div>';
+  S.rows = rows; S.hasClass = hasC; S.sel = rows.indexOf(rows.reduce((a,b) => b.p > a.p ? b : a)); S.wi = null; renderRes();
+  $('res').scrollIntoView({behavior:'smooth', block:'start'});
+}
+function err(t){ $('msg').innerHTML = '<div class="err">' + t + '</div>'; $('res').hidden = true; }
+function renderRes(){
+  $('res').hidden = false; const t = thr(), rows = S.rows, fl = rows.filter(r => r.p >= t);
+  const lab = rows.filter(r => r.cls === 0 || r.cls === 1), tp = lab.filter(r => r.cls === 1 && r.p >= t).length, fn = lab.filter(r => r.cls === 1 && r.p < t).length, fp = lab.filter(r => r.cls === 0 && r.p >= t).length;
+  const exp = fl.reduce((s,r) => s + r.o.Amount, 0);
+  const order = rows.map((_,k) => k).sort((a,b) => rows[b].p - rows[a].p);
+  let tb = `<tr><th>#</th><th>Amount</th><th>Risk</th><th>Verdict</th>${S.hasClass?'<th>Actual</th>':''}</tr>`;
+  order.slice(0, 300).forEach(k => { const r = rows[k], b = band(r.p);
+    tb += `<tr class="r ${k===S.sel?'sel':''}" data-k="${k}"><td>${r.i}</td><td>${num(r.o.Amount)}</td><td><span class="bar ${b==='f'?'hi':b==='m'?'md':''}"><i style="width:${Math.min(100,Math.max(2,r.p*100)).toFixed(1)}%"></i></span>${fmtP(r.p)}</td><td><span class="badge ${b}">${bandTxt[b]}</span></td>${S.hasClass?`<td>${r.cls===1?'Fraud':r.cls===0?'Genuine':''}</td>`:''}</tr>`; });
+  $('res').innerHTML = `<div class="kpis mt"><div class="kpi"><div class="l">Checked</div><div class="n">${rows.length}</div></div>
+    <div class="kpi bad"><div class="l">Flagged</div><div class="n">${fl.length}</div><div class="d">${eur(exp)} on hold</div></div>
+    <div class="kpi ok"><div class="l">Cleared</div><div class="n">${rows.length - fl.length}</div></div>
+    <div class="kpi"><div class="l">${S.hasClass?'Against Class column':'No Class column'}</div><div class="n">${S.hasClass && lab.length ? pct((tp + lab.length - tp - fn - fp)/lab.length,0) : 'n/a'}</div><div class="d">${S.hasClass ? `caught ${tp}, missed ${fn}, false alarms ${fp}` : 'add one to see right/wrong'}</div></div></div>
+    <div class="g3 mt"><div class="card"><div class="row" style="justify-content:space-between"><b>Results</b><button class="sm" id="bCsv">Download results</button></div><div class="scroll mt"><table>${tb}</table></div><div class="hint mt">Showing ${Math.min(300,rows.length)} of ${rows.length}, riskiest first. Click a row.</div></div><div class="card" id="detail"></div></div>`;
+  $('res').querySelectorAll('tr.r').forEach(tr => tr.onclick = () => { S.sel = Number(tr.dataset.k); S.wi = null; renderRes(); });
+  $('bCsv').onclick = () => { let s = 'row,Amount,Time,calibrated_risk,verdict' + (S.hasClass?',actual':'') + '\n'; rows.forEach(r => { s += [r.i, r.o.Amount, r.o.Time, r.p.toFixed(6), bandTxt[band(r.p)]].concat(S.hasClass?[r.cls]:[]).join(',') + '\n'; }); dl('fraud_results.csv', s); };
+  detail();
+}
+const hrs = o => ((o.Time % 86400)/3600);
+function ranges(){ if (ranges.c) return ranges.c; const c = M.stream.cols, r = M.stream.rows, out = {};
+  RAW.forEach(f => { const j = c.indexOf(f), v = r.map(x => x[j]).sort((a,b) => a-b); out[f] = [v[Math.floor(v.length*.01)], v[Math.floor(v.length*.99)]]; });
+  out.Amount = [0, Math.max(500, out.Amount[1]*1.5)]; return ranges.c = out; }
+function detail(){
+  const r = S.rows[S.sel]; if (!r) return; const t = thr();
+  if (!S.wi) S.wi = {...r.o};
+  const cur = score(S.wi, true), b = band(cur.p), orig = r.p;
+  const feats = M.feats.map((n,k) => [n, cur.phi[k]*A]).sort((a,b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const top = feats.slice(0,7), mx = Math.max(...top.map(f => Math.abs(f[1])), 1e-9);
+  let bars = ''; top.forEach(([n,c]) => { const val = n.startsWith('hour') ? hrs(S.wi).toFixed(1)+'h' : num(S.wi[n],3);
+    bars += `<div class="contrib"><b>${n}</b><div class="cb"><i style="${c>0?'left:50%;background:var(--bad)':'right:50%;background:#2aa6b8'};width:${Math.abs(c)/mx*50}%"></i></div><span class="mute">${c>0?'+':''}${c.toFixed(2)}</span></div><div class="hint" style="margin:0 0 0 82px">value ${val}</div>`; });
+  const wfeat = []; feats.forEach(([n]) => { const m = n.startsWith('hour') ? 'Hour' : n; if (!wfeat.includes(m) && wfeat.length < 5) wfeat.push(m); }); if (!wfeat.includes('Amount')) wfeat.push('Amount');
+  const R = ranges(); let sl = '';
+  wfeat.forEach(f => { const rg = f === 'Hour' ? [0,24] : R[f], v = f === 'Hour' ? hrs(S.wi) : S.wi[f]; sl += `<div class="wi"><b>${f}</b><input type="range" data-f="${f}" min="${rg[0]}" max="${rg[1]}" step="${(rg[1]-rg[0])/200}" value="${Math.min(Math.max(v,rg[0]),rg[1])}"><span class="mute">${f==='Hour'?v.toFixed(1):num(v,2)}</span></div>`; });
+  const changed = Math.abs(cur.p - orig) > 1e-9;
+  $('detail').innerHTML = `<div class="verdict ${b}"><h3>${bandTxt[b]}</h3><div>Calibrated fraud risk <b>${fmtP(cur.p)}</b> (flag line ${fmtP(t)}).</div>
+    <div class="small mute">Row ${r.i} · ${eur(S.wi.Amount,2)} · ${hrs(S.wi).toFixed(1)}h${S.hasClass && r.cls !== null ? ' · actual: ' + (r.cls===1?'fraud':'genuine') : ''}${changed ? ` · edited (was ${fmtP(orig)})` : ''}</div></div>
+    <div class="small">${riskLine(cur.p)}</div>
+    <b class="small" style="display:block;margin-top:10px">Why (exact SHAP, log-odds; red pushes toward fraud)</b>${bars}
+    <details class="mt" open><summary>What if? Move the main drivers</summary><div class="hint">Re-scores live. Useful to see what would change the verdict.</div><div class="mt">${sl}</div><button class="sm" id="wiRst">Reset to original</button></details>`;
+  $('detail').querySelectorAll('input[data-f]').forEach(inp => inp.oninput = () => {
+    const f = inp.dataset.f, v = Number(inp.value); if (f === 'Hour') S.wi.Time = Math.floor(S.wi.Time/86400)*86400 + v*3600; else S.wi[f] = v; detail(); });
+  $('wiRst').onclick = () => { S.wi = null; detail(); };
+}
+function riskLine(p){ const bs = M.test.rel; const b = bs.find(x => p >= x[0] && p < x[1]) || bs[bs.length-1]; if (!b || !b[2]) return '';
+  return `On held-out future data, <b>${b[3]} of ${b[2].toLocaleString()}</b> transactions scored ${fmtP(b[0])} to ${fmtP(b[1])} were actual fraud (${pct(b[3]/b[2])}).`; }
+
+/* ---------- live monitor ---------- */
+const L = {i: 0, run: false, speed: 1, timer: null, feed: [], queue: [], caught: 0, missed: 0, tp: 0, fp: 0, fn: 0, tn: 0, hist: [], scored: null};
+function liveReset(){ clearInterval(L.timer); Object.assign(L, {i:0, run:false, feed:[], queue:[], caught:0, missed:0, tp:0, fp:0, fn:0, tn:0, hist:[]}); }
+function liveScore(){ if (L.scored) return; const c = M.stream.cols; L.scored = M.stream.rows.map((r, k) => { const o = {}; c.forEach((n,j) => o[n] = r[j]); return {o, cls: o.Class, ...score(o, false), k}; }); }
+function pgLive(){
+  liveScore();
+  $('page').innerHTML = `<div class="card"><div class="row" style="justify-content:space-between"><div><h3>Live transaction monitor</h3><div class="sub">Replays held-out future transactions in time order (fraud is boosted to about 5% so you see action). The flag line is the one in the bar above.</div></div>
+    <div class="row"><button class="primary" id="lRun">Start</button><select id="lSpd"><option value="1">1×</option><option value="4">4×</option><option value="12">12×</option><option value="40">40×</option></select><button id="lRst">Reset</button></div></div></div>
+    <div class="kpis mt" id="lK"></div>
+    <div class="g3 mt"><div><div class="card"><h3>Feed</h3><div class="feed" id="lFeed"></div></div><div class="card mt"><h3>Cumulative fraud € (stopped vs lost)</h3><div id="lCh"></div>${legend([['var(--ok)','Stopped (flagged fraud)'],['var(--bad)','Lost (missed fraud)']])}</div></div>
+    <div class="card"><h3>Analyst queue</h3><div class="sub">You are the reviewer. Decide, then see if you were right.</div><div id="lQ" class="feed" style="max-height:640px"></div></div></div>`;
+  $('lSpd').value = String(L.speed); $('lRun').textContent = L.run ? 'Pause' : 'Start';
+  $('lRun').onclick = () => { L.run = !L.run; $('lRun').textContent = L.run ? 'Pause' : 'Start'; clearInterval(L.timer); if (L.run) L.timer = setInterval(liveTick, 700 / L.speed); };
+  $('lSpd').onchange = e => { L.speed = Number(e.target.value); if (L.run){ clearInterval(L.timer); L.timer = setInterval(liveTick, 700 / L.speed); } };
+  $('lRst').onclick = () => { liveReset(); pgLive(); };
+  liveDraw(true);
+}
+function liveTick(){
+  if (S.page !== 'live'){ clearInterval(L.timer); L.run = false; return; }
+  if (L.i >= L.scored.length){ L.run = false; clearInterval(L.timer); $('lRun').textContent = 'Start'; return; }
+  const r = L.scored[L.i++], f = r.p >= thr(), fr = r.cls === 1;
+  if (f && fr){ L.tp++; L.caught += r.o.Amount; } else if (f){ L.fp++; } else if (fr){ L.fn++; L.missed += r.o.Amount; } else L.tn++;
+  L.feed.unshift({r, f, fresh: true}); L.feed = L.feed.slice(0, 40);
+  if (f) L.queue.unshift({r, dec: null}); L.queue = L.queue.slice(0, 30);
+  L.hist.push([L.i, L.caught, L.missed]); liveDraw(false);
+}
+function liveDraw(full){
+  const seen = L.i, fl = L.tp + L.fp;
+  $('lK').innerHTML = `<div class="kpi"><div class="l">Processed</div><div class="n">${seen}</div><div class="d">of ${L.scored.length}</div></div>
+    <div class="kpi bad"><div class="l">Flagged</div><div class="n">${fl}</div><div class="d">${L.tp} real, ${L.fp} false alarms</div></div>
+    <div class="kpi ok"><div class="l">Fraud stopped</div><div class="n">${eur(L.caught)}</div><div class="d">${L.tp} of ${L.tp+L.fn} frauds</div></div>
+    <div class="kpi ${L.missed>0?'bad':''}"><div class="l">Fraud lost</div><div class="n">${eur(L.missed)}</div><div class="d">${L.fn} missed</div></div>`;
+  $('lFeed').innerHTML = L.feed.length ? L.feed.slice(0, 14).map(({r,f}, n) => { const b = f ? 'f' : band(r.p);
+    return `<div class="fi ${n===0&&f?'new':''}"><span class="mute">#${r.k+1}</span><b>${eur(r.o.Amount,2)}</b><span><span class="bar ${b==='f'?'hi':b==='m'?'md':''}"><i style="width:${Math.min(100,Math.max(2,r.p*100))}%"></i></span>${fmtP(r.p)}</span><span class="badge ${b}">${bandTxt[b]}</span></div>`; }).join('') : '<div class="mute small">Press Start.</div>';
+  const qsig = L.queue.map(q => (q.r.k) + ':' + q.dec).join('|') + '#' + (L.i === 0 ? 'r' : '');
+  if (full || qsig !== L.qsig){ L.qsig = qsig;
+  $('lQ').innerHTML = L.queue.length ? L.queue.map((q, n) => { const r = q.r, top = topReasons(r.o);
+    const body = q.dec === null ? `<div class="row mt"><button class="sm bad" data-q="${n}" data-d="1">Confirm fraud</button><button class="sm" data-q="${n}" data-d="0">Mark genuine</button></div>`
+      : `<div class="small mt"><b>You: ${q.dec===1?'fraud':'genuine'}</b> · truth: <b>${r.cls===1?'fraud':'genuine'}</b> · ${q.dec===r.cls?'<span style="color:var(--ok)">correct</span>':'<span style="color:var(--bad)">wrong</span>'}</div>`;
+    return `<div class="q ${q.dec!==null?'done':''}"><div class="row" style="justify-content:space-between"><b>${eur(r.o.Amount,2)}</b><span class="badge f">${fmtP(r.p)} risk</span></div><div class="hint">Main signals: ${top}</div>${body}</div>`; }).join('') : '<div class="mute small">Flagged transactions land here.</div>';
+  $('lQ').querySelectorAll('button[data-q]').forEach(b => b.onclick = () => { L.queue[Number(b.dataset.q)].dec = Number(b.dataset.d); liveDraw(false); });
+  }
+  const hh = L.hist, mx = Math.max(1, ...hh.map(h => Math.max(h[1], h[2]))), n = Math.max(L.scored.length, 1);
+  const sers = [{pts: hh.map(h => [h[0]/n, h[1]/mx]), c: 'var(--ok)'}, {pts: hh.map(h => [h[0]/n, h[2]/mx]), c: 'var(--bad)'}].filter(s => s.pts.length > 1);
+  $('lCh').innerHTML = lineChart(560,190,sers.length?sers:[{pts:[[0,0],[1,0]],c:'var(--line)'}],{xt:[0,.5,1].map(v=>[v,Math.round(v*n)]),yt:[0,.5,1].map(v=>[v,eur(v*mx)]),xl:'transactions'});
+}
+function topReasons(o){ const s = score(o, true); return M.feats.map((n,k) => [n, s.phi[k]*A]).filter(x => x[1] > 0).sort((a,b) => b[1]-a[1]).slice(0,3).map(x => `${x[0]} (+${x[1].toFixed(1)})`).join(', ') || 'none strong'; }
+
+/* ---------- insights ---------- */
+function pgInsights(){
+  const T = M.test, imp = M.imp, mx = imp[0][1];
+  const lossArr = T.tab.map(r => r[5] + S.rc*(r[0]+r[1])), lmax = Math.max(...lossArr), lmin = Math.min(...lossArr);
+  const pts = lossArr.map((l,i) => [i/(GRID.length-1), (l - lmin*0.9)/(lmax - lmin*0.9)]);
+  $('page').innerHTML = `<div class="g2"><div class="card"><h3>What drives the model (global SHAP)</h3><div class="sub">Average absolute push per feature on ${T.n.toLocaleString()} future transactions. V1–V28 are PCA components, so they show which one matters, not what it means.</div>
+      ${imp.map(([n,v]) => `<div class="contrib" style="grid-template-columns:80px 1fr 50px"><b>${n}</b><div class="cb" style="background:var(--line)"><i style="left:0;width:${v/mx*100}%;background:var(--brand)"></i></div><span class="mute">${v.toFixed(2)}</span></div>`).join('')}</div>
+    <div class="card"><h3>Cost of every threshold</h3><div class="sub">Euros lost = fraud missed + ${eur(S.rc)} per flagged transaction. The dot is your current threshold, the dashed line the one validated before testing.</div><div id="chCost"></div>
+      <div class="small mt">Best on test: <b>${fmtP(GRID[bestIdx()])}</b> (${eur(Math.min(...lossArr))} lost) · validated: <b>${fmtP(GRID[M.val_idx])}</b> (${eur(lossArr[M.val_idx])} lost) · no model: ${eur(T.base_loss)} lost</div></div></div>
+    <div class="g2 mt"><div class="card"><h3>Are the percentages honest? (calibration)</h3><div class="sub">Predicted risk vs fraud actually seen, in the future test window.</div>
+      <table><tr><th>Predicted</th><th>Seen as fraud</th><th>Transactions</th></tr>${T.rel.map(b => `<tr><td>${pct(b[4], b[4]<.01?2:1)}</td><td>${pct(b[3]/b[2], b[3]/b[2]<.01?2:1)} <span class="hint">(${b[3]})</span></td><td>${b[2].toLocaleString()}</td></tr>`).join('')}</table>
+      <div class="hint mt">Platt scaling on the validation window. Brier score ${M.brier[0].toFixed(5)} before, ${M.brier[1].toFixed(5)} after. Rows with few frauds are noisy.</div></div>
+    <div class="card"><h3>Model leaderboard (validation window)</h3><div class="sub">Every model trained on the same past data and compared on the same next-period data. The app ships the tuned XGBoost because its trees run inside this page; a different winner here would be an honest finding, not a bug.</div>
+      <table><tr><th>Model</th><th>PR-AUC</th><th>ROC-AUC</th></tr>${M.board.map(b => `<tr><td>${b.model}</td><td><b>${b.pr_auc.toFixed(3)}</b></td><td>${b.roc_auc.toFixed(3)}</td></tr>`).join('')}</table>
+      <details class="mt"><summary>Tuned hyper-parameters</summary><div class="small mt">${Object.entries(M.params).map(([k,v]) => `<code>${k}=${typeof v==='number' && !Number.isInteger(v)?v.toFixed(3):v}</code>`).join(' ')}</div></details></div></div>`;
+  $('chCost').innerHTML = lineChart(520,250,[{pts,c:'#0b8aa0'}],{xt:[[0,fmtP(GRID[0])],[.25,fmtP(GRID[40])],[.5,'50%'],[.75,fmtP(GRID[120])],[1,fmtP(GRID[160])]],yt:[0,.5,1].map(v=>[v,eur(lmin*.9+v*(lmax-lmin*.9))]),xl:'flag when risk ≥',
+    marks:[[S.idx/(GRID.length-1), pts[S.idx][1], 'var(--bad)']], vlines:[[M.val_idx/(GRID.length-1),'var(--ok)']]});
+}
+function pgAbout(){
+  const sp = M.split;
+  $('page').innerHTML = `<div class="card"><h3>How this was built</h3><div class="small">
+   <ol><li><b>Data:</b> ${M.source}. Two days of European card transactions, 30 inputs (Time, Amount, V1–V28 anonymised PCA components), heavily imbalanced.</li>
+   <li><b>Honest split:</b> sorted by time. Train ${sp.train[0].toLocaleString()} rows (${sp.train[1]} fraud), validation ${sp.val[0].toLocaleString()} (${sp.val[1]}), test ${sp.test[0].toLocaleString()} (${sp.test[1]}). The base paper shuffled and balanced its test set; this does not.</li>
+   <li><b>Features:</b> raw Time is replaced by time of day (sine and cosine) so the model cannot memorise a position in the two days.</li>
+   <li><b>Models:</b> logistic regression, random forest, XGBoost; XGBoost tuned with randomised search and stratified CV on PR-AUC. Trees are embedded here and scored in JavaScript, matching Python to about 1e-6.</li>
+   <li><b>Calibration:</b> Platt scaling on the validation window so a "2% risk" means roughly 2 in 100.</li>
+   <li><b>Decision:</b> threshold chosen on validation to minimise euros lost (missed fraud plus review cost per flag), then tested once on the future window.</li>
+   <li><b>Explanations:</b> exact TreeSHAP per transaction.</li></ol>
+   <p class="mute"><b>Limits.</b> One dataset, two days, PCA-anonymised inputs: only rows in this exact format can be scored, and real bank data would need retraining. Only a few hundred frauds exist per window, so every number has a wide interval. No card history, merchant or device features, and no concept-drift monitoring. This is a coursework demo and must not be used on real transactions.</p></div></div>`;
+}
+
+/* ============ shell ============ */
+function setIdx(i){ S.idx = Math.min(Math.max(i, 0), GRID.length-1); $('thr').value = S.idx; refresh(); }
+function refresh(){
+  $('thrV').textContent = fmtP(thr()); $('rc').value = S.rc; $('thrHint').textContent = S.idx === M.val_idx ? 'validated on past data' : '';
+  if (S.page === 'overview') pgOverview(); else if (S.page === 'insights') pgInsights();
+  else if (S.page === 'check'){ if (S.rows.length){ S.rows.forEach(r => { r.o && Object.assign(r, score(r.o,false)); }); S.wi = null; renderRes(); } }
+  else if (S.page === 'live'){ liveScore(); L.scored.forEach(r => Object.assign(r, score(r.o,false))); liveDraw(false); }
+}
+function go(p){ S.page = p; location.hash = p; document.querySelectorAll('#nav a').forEach(a => a.classList.toggle('on', a.dataset.p === p));
+  ({overview:pgOverview, check:pgCheck, live:pgLive, insights:pgInsights, about:pgAbout})[p](); window.scrollTo(0,0); }
+document.querySelectorAll('#nav a').forEach(a => a.onclick = () => go(a.dataset.p));
+$('thr').oninput = e => setIdx(Number(e.target.value));
+$('rc').onchange = e => { S.rc = Math.max(0, Number(e.target.value) || 0); refresh(); };
+$('rstThr').onclick = () => { S.rc = M.rc; setIdx(M.val_idx); };
+$('pill').textContent = `XGBoost · ${M.trees.length} trees · calibrated`;
+$('thr').max = GRID.length - 1; $('thr').value = S.idx;
+$('thrV').textContent = fmtP(thr()); $('rc').value = S.rc;
+{ const h0 = (location.hash || '').slice(1); go(['overview','check','live','insights','about'].includes(h0) ? h0 : 'overview'); }
+</script>
+</body>
+</html>
