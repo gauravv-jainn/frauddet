@@ -20,4 +20,11 @@ explain:
   top_raising: 4
   top_lowering: 2
 app:
-  case_db: data/cases.sqlite
+  db: data/fraudlens.sqlite   # users, API keys, cases, audit trail (env FRAUDLENS_DB overrides)
+  session_timeout_minutes: 60
+  max_failed_logins: 5       # then the account is locked for lockout_minutes
+  lockout_minutes: 15
+  max_upload_rows: 20000
+api:
+  max_batch: 1000            # transactions per POST /v1/score
+  rate_limit_per_minute: 120 # per API key

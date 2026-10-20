@@ -1,4 +1,5 @@
 """Money-aware evaluation: cost of missed fraud plus analyst review cost."""
+
 from __future__ import annotations
 
 import numpy as np
@@ -25,7 +26,10 @@ def confusion_at(y, p, amt, threshold: float, review_cost: float) -> dict:
         "review_cost": float(review_cost),
         "transactions": int(len(y)),
         "flagged": int(flag.sum()),
-        "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+        "tp": tp,
+        "fp": fp,
+        "fn": fn,
+        "tn": tn,
         "precision": tp / (tp + fp) if (tp + fp) else 0.0,
         "recall": tp / (tp + fn) if (tp + fn) else 0.0,
         "false_alarms_per_10k_genuine": 1e4 * fp / (fp + tn) if (fp + tn) else 0.0,
@@ -55,19 +59,35 @@ def cost_curve(y, p, amt, review_cost: float, max_points: int = 400) -> pd.DataF
     fraud_amt = am[ys].sum()
     n_pos = ys.sum()
     n_neg = len(ys) - n_pos
-    df = pd.DataFrame({
-        "threshold": thr,
-        "flagged": n_flag,
-        "missed_amount": fraud_amt - caught,
-        "review_cost_total": review_cost * n_flag,
-        "recall": tp / max(n_pos, 1),
-        "precision": tp / n_flag,
-        "false_alarms_per_10k_genuine": 1e4 * (n_flag - tp) / max(n_neg, 1),
-    })
+    df = pd.DataFrame(
+        {
+            "threshold": thr,
+            "flagged": n_flag,
+            "missed_amount": fraud_amt - caught,
+            "review_cost_total": review_cost * n_flag,
+            "recall": tp / max(n_pos, 1),
+            "precision": tp / n_flag,
+            "false_alarms_per_10k_genuine": 1e4 * (n_flag - tp) / max(n_neg, 1),
+        }
+    )
     # "flag nothing" point
-    df = pd.concat([pd.DataFrame({"threshold": [np.inf], "flagged": [0], "missed_amount": [fraud_amt],
-                                  "review_cost_total": [0.0], "recall": [0.0], "precision": [1.0],
-                                  "false_alarms_per_10k_genuine": [0.0]}), df], ignore_index=True)
+    df = pd.concat(
+        [
+            pd.DataFrame(
+                {
+                    "threshold": [np.inf],
+                    "flagged": [0],
+                    "missed_amount": [fraud_amt],
+                    "review_cost_total": [0.0],
+                    "recall": [0.0],
+                    "precision": [1.0],
+                    "false_alarms_per_10k_genuine": [0.0],
+                }
+            ),
+            df,
+        ],
+        ignore_index=True,
+    )
     df["total_cost"] = df["missed_amount"] + df["review_cost_total"]
     return df
 

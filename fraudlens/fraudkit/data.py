@@ -4,6 +4,7 @@ Primary source: Kaggle "kartik2112/fraud-detection" (simulated card transactions
 generated with the Sparkov tool). The provided fraudTrain/fraudTest split is a
 time split and is kept as-is.
 """
+
 from __future__ import annotations
 
 import os
@@ -16,20 +17,57 @@ KAGGLE_DATASET = "kartik2112/fraud-detection"
 DATA_SOURCE = "Kaggle kartik2112/fraud-detection (Sparkov simulated card transactions)"
 
 RAW_COLUMNS = [
-    "trans_date_trans_time", "cc_num", "merchant", "category", "amt", "gender",
-    "city", "state", "lat", "long", "city_pop", "job", "dob", "merch_lat",
-    "merch_long", "trans_num", "is_fraud",
+    "trans_date_trans_time",
+    "cc_num",
+    "merchant",
+    "category",
+    "amt",
+    "gender",
+    "city",
+    "state",
+    "lat",
+    "long",
+    "city_pop",
+    "job",
+    "dob",
+    "merch_lat",
+    "merch_long",
+    "trans_num",
+    "is_fraud",
 ]
 # Columns a scoring request must provide (label and trans_num optional).
 REQUIRED_COLUMNS = [
-    "trans_date_trans_time", "cc_num", "merchant", "category", "amt", "gender",
-    "city", "state", "lat", "long", "city_pop", "job", "dob", "merch_lat", "merch_long",
+    "trans_date_trans_time",
+    "cc_num",
+    "merchant",
+    "category",
+    "amt",
+    "gender",
+    "city",
+    "state",
+    "lat",
+    "long",
+    "city_pop",
+    "job",
+    "dob",
+    "merch_lat",
+    "merch_long",
 ]
 DTYPES = {
-    "cc_num": "int64", "merchant": "string", "category": "string", "amt": "float64",
-    "gender": "string", "city": "string", "state": "string", "lat": "float64",
-    "long": "float64", "city_pop": "int64", "job": "string", "merch_lat": "float64",
-    "merch_long": "float64", "trans_num": "string",
+    "cc_num": "int64",
+    "merchant": "string",
+    "category": "string",
+    "amt": "float64",
+    "gender": "string",
+    "city": "string",
+    "state": "string",
+    "lat": "float64",
+    "long": "float64",
+    "city_pop": "int64",
+    "job": "string",
+    "merch_lat": "float64",
+    "merch_long": "float64",
+    "trans_num": "string",
 }
 
 
@@ -38,6 +76,15 @@ class RawData:
     train: pd.DataFrame
     test: pd.DataFrame
     source: str
+
+
+def cached_dataset() -> Path | None:
+    """Folder of an already-downloaded copy (kagglehub cache), without touching the network."""
+    base = Path.home() / ".cache" / "kagglehub" / "datasets" / Path(KAGGLE_DATASET) / "versions"
+    for v in sorted(base.glob("*"), reverse=True) if base.exists() else []:
+        if (v / "fraudTrain.csv").exists() and (v / "fraudTest.csv").exists():
+            return v
+    return None
 
 
 def locate_dataset(cache_dir: str | os.PathLike | None = None) -> Path:
@@ -137,6 +184,13 @@ if __name__ == "__main__":
     tbl = Table("split", "rows", "cards", "frauds", "fraud_rate", "start", "end")
     for name, df in [("train", raw.train), ("test", raw.test)]:
         d = describe(df)
-        tbl.add_row(name, f"{d['rows']:,}", f"{d['cards']:,}", f"{d['frauds']:,}",
-                    f"{d['fraud_rate']:.4%}", d["start"], d["end"])
+        tbl.add_row(
+            name,
+            f"{d['rows']:,}",
+            f"{d['cards']:,}",
+            f"{d['frauds']:,}",
+            f"{d['fraud_rate']:.4%}",
+            d["start"],
+            d["end"],
+        )
     con.print(tbl)

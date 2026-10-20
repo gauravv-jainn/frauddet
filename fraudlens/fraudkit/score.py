@@ -1,4 +1,5 @@
 """Model bundle: features -> raw score -> calibrated probability -> risk band."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
-from .features import CATEGORICAL, FEATURES, MerchantEncoder, build_features, featurize_with_history, model_frame
+from .features import FEATURES, MerchantEncoder, build_features, featurize_with_history, model_frame
 
 ARTIFACTS = Path(__file__).resolve().parents[1] / "artifacts"
 
@@ -54,17 +55,18 @@ def _logit(p):
 
 @dataclass
 class FraudModel:
-    model: object                 # LGBMClassifier
+    model: object  # LGBMClassifier
     calibrator: Calibrator
     encoder: MerchantEncoder
     categories: dict
     threshold: float
-    bands: dict                   # lower bounds for Medium/High/Critical
+    bands: dict  # lower bounds for Medium/High/Critical
     review_cost: float
     model_name: str
     data_source: str
     versions: dict = field(default_factory=dict)
     features: list = field(default_factory=lambda: list(FEATURES))
+    version: str = "unversioned"  # set by the trainer: <finished UTC>-<sha256 of model file>
 
     # --- feature preparation -------------------------------------------------
     def prepare(self, feat: pd.DataFrame) -> pd.DataFrame:
@@ -88,7 +90,7 @@ class FraudModel:
         thr = self.threshold if threshold is None else threshold
         med = self.bands.get("medium")
         med = thr if med is None else med
-        high = max(self.bands["high"], med)          # keep the bands ordered for any custom threshold
+        high = max(self.bands["high"], med)  # keep the bands ordered for any custom threshold
         critical = max(self.bands["critical"], high)
         return {"medium": med, "high": high, "critical": critical}
 
@@ -105,8 +107,22 @@ class FraudModel:
         joblib.dump(self, path)
 
     @staticmethod
-    def load(path: Path | None = None) -> "FraudModel":
+    def load(path: Path | None = None) -> FraudModel:
         return joblib.load(path or ARTIFACTS / "model.joblib")
+
+
+def load_serving_model(path: Path | None = None, bands: dict | None = None) -> FraudModel:
+    """Model as served by the app and the API: band boundaries come from the current config.
+
+    Both entry points must use this so a transaction gets the same band everywhere.
+    """
+    fm = FraudModel.load(path)
+    if bands is None:
+        from .config import load_config
+
+        bands = load_config().bands.model_dump()
+    fm.bands = dict(bands)
+    return fm
 
 
 def load_metrics(path: Path | None = None) -> dict:

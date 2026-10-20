@@ -1,4 +1,5 @@
 """Training twice with the same config must give identical metrics (uses --fast on a small card sample)."""
+
 import json
 from pathlib import Path
 
@@ -8,11 +9,9 @@ from fraudkit import train
 
 
 def _dataset_available() -> bool:
-    try:
-        from fraudkit.data import locate_dataset
-        return (locate_dataset() / "fraudTrain.csv").exists()
-    except Exception:
-        return False
+    from fraudkit.data import cached_dataset
+
+    return cached_dataset() is not None  # never downloads (CI skips this test)
 
 
 def _round(o, nd=10):
@@ -27,13 +26,15 @@ def _round(o, nd=10):
 
 
 def _comparable(m: dict) -> dict:
-    return _round({
-        "leaderboard": [{k: r[k] for k in ("model", "pr_auc", "roc_auc", "brier")} for r in m["leaderboard"]],
-        "best_params": m["tuning"]["best_params"],
-        "threshold": m["threshold"]["value"],
-        "test": {k: m["test"][k] for k in ("pr_auc", "pr_auc_ci95", "roc_auc", "brier_after_calibration")},
-        "at_threshold": m["test"]["at_threshold"],
-    })
+    return _round(
+        {
+            "leaderboard": [{k: r[k] for k in ("model", "pr_auc", "roc_auc", "brier")} for r in m["leaderboard"]],
+            "best_params": m["tuning"]["best_params"],
+            "threshold": m["threshold"]["value"],
+            "test": {k: m["test"][k] for k in ("pr_auc", "pr_auc_ci95", "roc_auc", "brier_after_calibration")},
+            "at_threshold": m["test"]["at_threshold"],
+        }
+    )
 
 
 @pytest.mark.skipif(not _dataset_available(), reason="Kaggle dataset not cached")
