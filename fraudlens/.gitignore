@@ -9,3 +9,4 @@ __pycache__/
 .env
 kaggle.json
 .pytest_cache/
+artifacts/retrain_stdout.log

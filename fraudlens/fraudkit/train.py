@@ -205,12 +205,20 @@ def bootstrap_pr_auc(y, p, n_boot: int, seed: int) -> tuple[float, float, float]
     return point, float(lo), float(hi)
 
 
-def reliability_table(y, p, n_bins: int = 10) -> list[dict]:
-    """Quantile-binned reliability table (equal-count bins on predicted probability)."""
-    df = pd.DataFrame({"y": np.asarray(y), "p": np.asarray(p)})
-    df["bin"] = pd.qcut(df["p"].rank(method="first"), q=n_bins, labels=False)
-    g = df.groupby("bin").agg(n=("y", "size"), mean_predicted=("p", "mean"), observed_rate=("y", "mean"),
-                              p_min=("p", "min"), p_max=("p", "max"))
+RELIABILITY_EDGES = [0.0, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+
+
+def reliability_table(y, p) -> list[dict]:
+    """Reliability table on fixed probability bins (empty bins are skipped).
+
+    Fixed bins rather than equal-count bins: with 0.4% fraud, equal-count bins all sit near zero.
+    """
+    df = pd.DataFrame({"y": np.asarray(y), "p": np.asarray(p, dtype="float64")})
+    df["bin"] = pd.cut(df["p"], bins=RELIABILITY_EDGES, include_lowest=True, right=False)
+    df.loc[df["p"] >= 1.0, "bin"] = df["bin"].cat.categories[-1]
+    g = df.groupby("bin", observed=True).agg(n=("y", "size"), frauds=("y", "sum"), mean_predicted=("p", "mean"),
+                                             observed_rate=("y", "mean"))
+    g["bin"] = [f"{iv.left:.2f}-{iv.right:.2f}" for iv in g.index]
     return g.reset_index(drop=True).to_dict(orient="records")
 
 
@@ -487,6 +495,7 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
                 "roc_auc": float(roc_auc_score(y_test, p_test)),
                 "brier_before_calibration": float(brier_score_loss(y_test, p_test_raw)),
                 "brier_after_calibration": float(brier_score_loss(y_test, p_test)),
+                "reliability_before": reliability_table(y_test, p_test_raw),
                 "reliability_after": reliability_table(y_test, p_test),
                 "at_threshold": at_test,
                 "curve": downsample_curve(curve_test).to_dict(orient="list"),
