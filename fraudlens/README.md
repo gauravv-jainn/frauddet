@@ -1,9 +1,13 @@
 # FraudLens
 
-Credit card fraud detection with **calibrated risk scores** and **plain-English reasons** for every decision.
-A LightGBM model scores each transaction, its probability is calibrated so "30%" really means about 30%, and a money-aware
-threshold decides what goes to an analyst. Every score comes with reason codes built from SHAP values and the transaction's
-actual numbers, e.g. *"Amount is 13.1x what this card usually spends on 'entertainment' (average EUR 47.48)"*.
+Credit card fraud detection with **calibrated risk scores** and **plain-English reasons** for every decision, packaged as a
+secured analyst application and a scoring API.
+
+A LightGBM model scores each transaction. Its probability is calibrated, so "30%" really means about 30%, and a
+money-aware threshold decides what goes to an analyst. Every score comes with reason codes built from SHAP values and the
+transaction's actual numbers, e.g. *"Amount is 13.1x what this card usually spends on 'entertainment' (average €47.48)"*.
+Analysts work the flagged transactions in a case queue with assignment and a full audit trail. Admins manage users, API
+keys and retraining, and everyone can watch data drift and model performance.
 
 Everything runs locally (training included) on a normal CPU. Every number in this README and in the app comes from
 `artifacts/metrics.json`, written by an actual training run.
@@ -12,52 +16,55 @@ Everything runs locally (training included) on a normal CPU. Every number in thi
 
 ## What it does
 
-| Page | What you get |
-|---|---|
-| Dashboard | KPIs on the held-out test period: transactions scored, flagged, amount at risk, precision/recall, money saved; risk bands, flagged by category and hour |
-| Check a transaction | Pick a real test transaction or type one in; risk gauge, band, calibrated probability, red/green reason cards, recommended action, what-if (amount, hour, distance) |
-| Batch scoring | Upload a CSV, schema validation with clear errors, risk-ranked table with a reason per row, CSV download, push flagged rows to the case queue |
-| Case queue | SQLite queue of flagged transactions; Confirm fraud / Mark genuine / Escalate with notes; audit trail; analyst-agreement stats; **demo mode** streams test transactions into the queue |
-| Model report | Leaderboard, test metrics with bootstrap CI, reliability chart, threshold-vs-cost curve, global SHAP importance, data card, limitations |
-| Training Lab | Stage timeline, Optuna trial history with running best, leaderboard, chosen hyper-parameters, machine and library info; **Retrain** button that runs training as a subprocess and tails the log live |
+| Page | What you get | Who |
+|---|---|---|
+| Dashboard | KPIs on the held-out test period: transactions scored, flagged, amount at risk, precision/recall, money saved; risk bands, flagged by category and hour | all |
+| Check a transaction | Pick a real test transaction or type one in; risk gauge, band, calibrated probability, red/green reason cards, recommended action, what-if (amount, hour, distance) | all (what-if and manual entry: analyst+) |
+| Batch scoring | Upload a CSV, schema validation with clear errors, risk-ranked table with a reason per row, CSV download (formula-safe), push flagged rows to the case queue | analyst+ |
+| Case queue | Flagged transactions with assign-to-me, Confirm fraud / Mark genuine / Escalate with notes, case age, per-case audit trail, CSV export, analyst-agreement stats; **demo mode** streams test transactions in | view: all, act: analyst+, clear: admin |
+| Monitoring | Monthly **data drift** (PSI per feature and for the score vs the training reference), drift alerts, weekly precision/recall/flag rate | all |
+| Model report | Leaderboard, test metrics with bootstrap CI, reliability chart, threshold-vs-cost curve, global SHAP importance, data card, limitations | all |
+| Training Lab | Stage timeline, Optuna trial history, leaderboard, hyper-parameters, machine info; **Retrain** runs training as a subprocess and tails the log live | view: all, retrain: admin |
+| Admin | Users (create, role, enable/disable, reset password), API keys (create once-shown keys, revoke, usage), audit log with filters and export, system status and model versions | admin |
+| My account | Role and permissions, change password | all |
 
 Threshold and review cost are adjustable in the sidebar and update every page.
 
 ## Architecture
 
 ```
-                        configs/default.yaml  (seed, split, trials, review cost, risk bands)
+                        configs/default.yaml (validated with pydantic at start-up)
                                   |
- Kaggle CSVs --> fraudkit/data.py --> fraudkit/features.py --> fraudkit/train.py --------------------+
- (kagglehub)     load + clean        per-card history features   leaderboard, Optuna, calibration,   |
-                                     (past rows only)            money threshold, test once          |
-                                                                                                     v
-                                                                  artifacts/  model.joblib (FraudModel bundle)
-                                                                              metrics.json, trials.csv,
-                                                                              training_log.jsonl,
-                                                                              test_scored.parquet, history.parquet
-                                                                                                     |
-        +--------------------------------------+-------------------------------+---------------------+
-        v                                      v                               v
- fraudkit/score.py                      fraudkit/explain.py              fraudkit/cases.py
- features -> raw score ->               SHAP -> grouped reason codes     SQLite case queue
- calibrated p -> band/action            with real numbers, what-if       + audit trail
-        |                                      |                               |
-        +------------------+-------------------+-------------------------------+
-                           v                                       v
-                 app/ (Streamlit, 6 pages)                  api/main.py (FastAPI POST /score,
-                                                            X-API-Key header)
+ Kaggle CSVs --> fraudkit/data.py --> fraudkit/features.py --> fraudkit/train.py -------------------------+
+ (kagglehub)     load + clean        per-card history features   leaderboard, Optuna, calibration,        |
+                                     (past rows only)            money threshold, test once, drift profile |
+                                                                                                          v
+                                       artifacts/ (written atomically, versioned <UTC time>-<sha256>)
+                                       model.joblib  metrics.json  reference_profile.json  runs/<version>/
+                                       trials.csv  training_log.jsonl  test_scored.parquet  history.parquet
+                                                                                                          |
+    +-------------------------+--------------------------+------------------------+----------------------+
+    v                         v                          v                        v
+ score.py                 explain.py                 monitoring.py            db.py / auth.py / cases.py
+ features -> raw score    SHAP -> grouped reason     PSI drift vs the         SQLite (WAL, migrations):
+ -> calibrated p ->       codes with real numbers,   training reference       users (PBKDF2), roles, lockout,
+ band / action            what-if                                             API keys (hashed), cases, audit
+    |                         |                          |                        |
+    +-------------+-----------+--------------------------+------------------------+
+                  v                                                    v
+     app/ Streamlit (login + roles, 9 pages)            api/main.py FastAPI /v1 (API keys, rate limit,
+                                                        request IDs, JSON logs)
 ```
 
-`fraudkit/` is plain Python (no Streamlit imports), so the same code serves the app, the API and the tests.
+`fraudkit/` is plain Python (no Streamlit imports), so the same code serves the app, the API, the CLI and the tests.
 
-## Setup in 5 commands
+## Setup
 
 From the `fraudlens/` folder (Windows PowerShell shown; on macOS/Linux use `.venv/bin/python`):
 
 ```bash
 python -m venv .venv
-.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python -m pip install -r requirements.txt -r requirements-api.txt
 .venv\Scripts\python -m fraudkit.train --config configs/default.yaml
 .venv\Scripts\python -m pytest -q
 .venv\Scripts\python -m streamlit run app/streamlit_app.py
@@ -65,7 +72,47 @@ python -m venv .venv
 
 The first training run downloads the public Kaggle dataset `kartik2112/fraud-detection` (about 200 MB) with `kagglehub`;
 no Kaggle account was needed for it on the build machine. `--fast` gives a ~30 second smoke run on a sample of cards.
-Optional API: `pip install -r requirements-api.txt`, set `FRAUDLENS_API_KEY`, then `uvicorn api.main:app --port 8000`.
+
+**First start:** the app asks you to create the first administrator account. That admin then creates the other users
+(Admin -> Users) with temporary passwords that must be changed at first sign-in. On a server without a browser, use the CLI:
+
+```bash
+.venv\Scripts\python -m fraudkit.admin create-user alice --role admin
+```
+
+### Scoring API
+
+```bash
+.venv\Scripts\python -m uvicorn api.main:app --port 8000
+```
+
+Create a key in **Admin -> API keys** (or `python -m fraudkit.admin create-api-key "checkout-service"`), then send it in
+the `X-API-Key` header:
+
+| Endpoint | Auth | Purpose |
+|---|---|---|
+| `POST /v1/score` | key | 1 to `api.max_batch` transactions -> probability, band, flag, action, summary, reasons, `model_version`, `request_id` |
+| `GET /v1/model` | key | Served model version, threshold, bands, features, headline test metrics |
+| `GET /v1/health` | none | Liveness |
+| `GET /v1/ready` | none | Model loaded and database reachable |
+
+Interactive docs at `http://localhost:8000/docs`. Keys are rate-limited per minute (`api.rate_limit_per_minute`, HTTP 429
+with `Retry-After`). The API hot-reloads the model when a retrain swaps in a new version.
+
+### Docker
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+This runs the API on `127.0.0.1:8000` and the app on `127.0.0.1:8501`, as a non-root user with health checks. Users, keys
+and cases live in a named volume, and `./artifacts` is mounted read-only (train on the host first).
+
+### Continuous integration
+
+`.github/workflows/fraudlens-ci.yml` runs `ruff check`, `ruff format --check` and `pytest` on every push that touches
+`fraudlens/`. Tests that need the Kaggle data or a trained model skip themselves there.
 
 ## How the training layer works
 
@@ -73,21 +120,27 @@ Optional API: `pip install -r requirements-api.txt`, set `FRAUDLENS_API_KEY`, th
 
 1. **load**: the provided `fraudTrain.csv` / `fraudTest.csv` time split is kept (train Jan 2019 - Jun 2020, test Jun - Dec 2020).
 2. **features**: 21 features. Card-behaviour features are computed in per-card time order from **strictly earlier**
-   transactions only: transactions in the last 1 h / 24 h, 24 h spend, amount vs the card's running average and vs its
-   average in this category, time since the previous transaction, km and km/h from the previous merchant (impossible-travel
-   flag above 800 km/h), first purchase in a category, card history length. Plus amount, hour, weekday, night flag,
-   home-to-merchant distance, age, city population, category, gender, and a smoothed **merchant target encoding**
-   fitted on the training period only (out-of-fold for the training rows).
+   transactions only:
+   - transactions in the last 1 h / 24 h and 24 h spend;
+   - amount vs the card's running average and vs its average in this category;
+   - time since the previous transaction;
+   - km and km/h from the previous merchant, with an impossible-travel flag above 800 km/h;
+   - first purchase in a category, and card history length.
+
+   Plus amount, hour, weekday, night flag, home-to-merchant distance, age, city population, category, gender, and a
+   smoothed **merchant target encoding** fitted on the training period only (out-of-fold for the training rows).
    `tests/test_features.py` proves it: features of row *i* are unchanged when all later rows are deleted or modified.
 3. **split**: the last 15% of the training period (by time) is the validation set. The test file is not touched until step 8.
 4. **baseline**: logistic regression, random forest, LightGBM with default parameters, all scored on validation.
-5. **tuning**: Optuna TPE, 30 trials, PR-AUC, 3-fold stratified CV on the fit period (genuine rows subsampled to 25%
-   inside the fit folds for speed, all frauds kept; evaluation folds untouched). The best LightGBM on validation is selected.
+5. **tuning**: Optuna TPE, 30 trials, PR-AUC, 3-fold stratified CV on the fit period. Inside the fit folds, genuine rows
+   are subsampled to 25% for speed; all frauds are kept and the evaluation folds are untouched. The best LightGBM on
+   validation is selected.
 6. **calibration**: isotonic regression on validation (Platt if fewer than 300 validation frauds).
 7. **threshold**: the threshold that minimises *missed fraud amount + review cost x flagged transactions* on validation.
 8. **test**: evaluated once: PR-AUC with a 1,000-resample bootstrap CI, recall, precision, false alarms per 10k genuine,
    money saved versus no model.
-9. **save**: model bundle, metrics, scored test set.
+9. **save**: the model bundle with its version id, metrics, the drift reference profile and the scored test set, all
+   staged and swapped in atomically. Metrics and trials are archived under `artifacts/runs/<version>/`.
 
 The terminal shows a live `rich` view (stage progress bars plus a live Optuna table) and the leaderboard at the end. Every
 step is appended to `artifacts/training_log.jsonl`. Everything is seeded and LightGBM runs in deterministic mode;
@@ -98,16 +151,40 @@ step is appended to `artifacts/training_log.jsonl`. Everything is seeded and Lig
 1. SHAP `TreeExplainer` gives each feature's contribution in log-odds; contributions plus the base value reconstruct the
    model's raw output exactly (tested).
 2. Related features are grouped (e.g. `amt` + `log_amt`, the three velocity features), so each fact is stated once.
-3. Groups that push the risk up by at least 0.05 log-odds become red reasons (top 4); groups that push it down become green
-   reasons (top 2). Nothing below the cut-off is mentioned (tested).
+3. Groups that push the risk up by at least 0.05 log-odds become red reasons (top 4 by default); groups that push it down
+   become green reasons (top 2). Nothing below the cut-off is mentioned (tested).
 4. Each reason is filled in with the transaction's real values (templates such as "Merchant is {km} km from the
    cardholder's home" or "Only {minutes} minutes since this card's previous transaction"), and the wording follows the
    value, not only the SHAP sign.
 5. The calibrated probability maps to a band. Medium starts at the money threshold, so "flagged" means "Medium or above".
    High starts at 0.30 and Critical at 0.70. Each band has an action: approve, step-up verification, hold for analyst
-   review, block and call the customer.
+   review, block and call the customer. App and API take the bands from the same config.
 6. **What-if** re-scores the same transaction with a different amount, hour or merchant distance, recomputing the
    history features against the card's real past.
+
+## Monitoring
+
+Training saves a reference profile: decile bin edges and shares of every feature on the fit period, plus the score
+distribution on validation. The Monitoring page bins each month of incoming data the same way and reports the
+**Population Stability Index**: < 0.10 stable, 0.10-0.25 moderate, >= 0.25 significant (alert). It also tracks weekly
+precision, recall and flag rate. In production, labels arrive late (chargebacks), so the flag rate and drift are the
+early signals.
+
+The first run of the monitor found a real defect. The original feature `card_txn_count` (a card's lifetime number of
+transactions) only ever grows, so it left the training range (PSI 3.7-6.1 in every test month). It was the model's 5th
+most important feature, so the model trusted cards more the older they got. It was replaced with the stationary
+`n_txn_30d` (transactions in the previous 30 days). On the same untouched test set, PR-AUC rose from 0.9682 to 0.9722,
+recall from 95.6% to 96.4%, and the saving from 1,102,221 to 1,104,591; precision moved from 85.5% to 81.1% at the
+new money-optimal threshold. The remaining alerts are December's holiday spending surge (`n_txn_24h`, `n_txn_30d`,
+`amt_sum_24h`), which is exactly what the monitor should flag.
+
+## Security and access control
+
+Local accounts with PBKDF2 password hashing, lockout after repeated failures, session timeout, and three roles
+(viewer, analyst, admin) enforced server-side. API keys are hashed and revocable, with per-key rate limits. Admin,
+security and case events are audit-logged. Card numbers are masked to the last four digits in the case store.
+Data-derived text is HTML-escaped, and CSV exports are protected against formula injection.
+See [SECURITY.md](SECURITY.md) for the full list and for what is still needed before handling real card data.
 
 ## Results (actual run)
 
@@ -116,39 +193,40 @@ step is appended to `artifacts/training_log.jsonl`. Everything is seeded and Lig
 
 | Model | PR-AUC | ROC-AUC | Brier | Fit time (s) |
 |---|---|---|---|---|
-| **LightGBM tuned (Optuna)** (selected) | 0.9845 | 0.9997 | 0.00049 | 6.8 |
-| Random forest | 0.9540 | 0.9970 | 0.00110 | 21.3 |
-| Logistic regression | 0.7411 | 0.9682 | 0.00264 | 4.5 |
-| LightGBM default | 0.7247 | 0.9480 | 0.00195 | 1.8 |
+| **LightGBM tuned (Optuna)** (selected) | 0.9844 | 0.9998 | 0.00063 | 5.5 |
+| Random forest | 0.9549 | 0.9974 | 0.00105 | 20.5 |
+| LightGBM default | 0.8027 | 0.9556 | 0.00162 | 1.8 |
+| Logistic regression | 0.7438 | 0.9672 | 0.00247 | 4.4 |
 
-Optuna: 30 trials, 3-fold stratified CV, best CV PR-AUC 0.9841.
+Optuna: 30 trials, 3-fold stratified CV, best CV PR-AUC 0.9842.
 
 **Test set** (555,719 transactions from 2020-06-21 to 2020-12-31, 2,145 frauds), evaluated once:
 
 | Metric | Value |
 |---|---|
-| PR-AUC (95% bootstrap CI) | 0.9682 (0.9620 - 0.9743), 1000 resamples |
+| PR-AUC (95% bootstrap CI) | 0.9722 (0.9666 - 0.9773), 1000 resamples |
 | ROC-AUC | 0.9978 |
-| Brier score, uncalibrated -> calibrated | 0.00043 -> 0.00040 (isotonic) |
-| Decision threshold (chosen on validation) | 0.1111 (review cost 5 per alert) |
-| Recall at threshold | 95.6% |
-| Precision at threshold | 85.5% |
-| False alarms per 10,000 genuine | 6.3 |
-| Transactions flagged | 2,397 |
+| Brier score, uncalibrated -> calibrated | 0.00055 -> 0.00039 (isotonic) |
+| Decision threshold (chosen on validation) | 0.0238 (review cost 5 per alert) |
+| Recall at threshold | 96.4% |
+| Precision at threshold | 81.1% |
+| False alarms per 10,000 genuine | 8.7 |
+| Transactions flagged | 2,548 |
 | Fraud amount in test period | 1,133,325 |
-| Cost with model (missed fraud + reviews) | 19,119 + 11,985 = 31,104 |
-| **Saved vs no model** | **1,102,221** |
+| Cost with model (missed fraud + reviews) | 15,994 + 12,740 = 28,734 |
+| **Saved vs no model** | **1,104,591** |
 
-Full training run: 582 s on 32 CPU threads (Windows-10-10.0.26200-SP0).
+Full training run: 502 s on 32 CPU threads (Windows-10-10.0.26200-SP0).
 <!-- RESULTS:END -->
 
 ## Screenshots
 
 | | |
 |---|---|
-| ![Dashboard](docs/screenshots/1_dashboard.png) | ![What-if](docs/screenshots/2b_what_if.png) |
-| ![Batch scoring](docs/screenshots/3_batch_scoring.png) | ![Case queue](docs/screenshots/4_case_queue.png) |
-| ![Model report](docs/screenshots/5_model_report.png) | ![Training Lab](docs/screenshots/6_training_lab.png) |
+| ![Sign in](docs/screenshots/0_login.png) | ![Dashboard](docs/screenshots/1_dashboard.png) |
+| ![What-if](docs/screenshots/2b_what_if.png) | ![Batch scoring](docs/screenshots/3_batch_scoring.png) |
+| ![Case queue](docs/screenshots/4_case_queue.png) | ![Monitoring](docs/screenshots/7_monitoring.png) |
+| ![Model report](docs/screenshots/5_model_report.png) | ![Admin](docs/screenshots/8_admin.png) |
 
 ## Limitations (read before showing to a client)
 
@@ -157,22 +235,27 @@ Full training run: 582 s on 32 CPU threads (Windows-10-10.0.26200-SP0).
   perform on a bank's data.
 - **Signals the simulator lacks.** No devices, IPs, real merchants, chargeback delays or label noise. Home-to-merchant
   distance carries almost no signal because the simulator places merchants randomly around each cardholder.
-- **Drift is not monitored**, and there is no retraining schedule.
 - **Calibration and threshold share the validation period.** The test period is the independent check.
 - **One cost model.** A flat review cost per alert and full loss of every missed fraud amount. The data has no
-  currency; amounts are shown as EUR.
-- Out of scope: login/auth, multi-tenancy, cloud deployment.
+  currency; amounts are shown in euros.
+- **Single-node MVP.** Local accounts (no SSO/MFA), SQLite, an in-process rate limiter and no TLS termination. Retraining
+  is manual, with no approval gate. [SECURITY.md](SECURITY.md) lists what to add for production.
 
 ## Repository layout
 
 ```
 fraudlens/
-  fraudkit/      data.py features.py train.py score.py explain.py costs.py cases.py
-  app/           streamlit_app.py, common.py, pages/1..6
-  api/           main.py (FastAPI, optional)
-  tests/         features (leakage), explanations, case queue, reproducibility, app click-through, API
-  configs/       default.yaml
-  artifacts/     metrics.json, trials.csv, training_log.jsonl (committed); model + parquet files (git-ignored)
-  scripts/       screenshots.py (Playwright), results_table.py (README table from metrics.json)
-  docs/          screenshots
+  fraudkit/   data features train score explain costs     (ML core)
+              config db auth cases monitoring security     (platform)
+              admin                                        (operator CLI)
+  app/        streamlit_app.py (login + navigation), common.py, views/ (9 pages)
+  api/        main.py (FastAPI /v1)
+  tests/      leakage, explanations, auth/roles/keys, config, drift, security helpers, migrations,
+              reproducibility, app click-through per role, API
+  configs/    default.yaml
+  artifacts/  metrics.json, trials.csv, training_log.jsonl, reference_profile.json, runs/ (committed);
+              model + parquet files (git-ignored)
+  scripts/    screenshots.py (Playwright), results_table.py (README table from metrics.json)
+  docs/       screenshots
+  Dockerfile, docker-compose.yml, pyproject.toml (ruff, pytest), SECURITY.md, .env.example
 ```

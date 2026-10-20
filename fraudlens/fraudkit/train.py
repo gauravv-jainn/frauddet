@@ -6,9 +6,12 @@
 Stages: load, features, split, baseline, tuning, calibration, threshold, test, save.
 Every step is appended to <out>/training_log.jsonl; Optuna history goes to <out>/trials.csv.
 """
+
 from __future__ import annotations
 
 import argparse
+import contextlib
+import hashlib
 import json
 import os
 import platform
@@ -17,12 +20,13 @@ import sys
 import time
 import traceback
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import yaml
+
+from .security import atomic_path, atomic_write_bytes, atomic_write_text
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_OUT = ROOT / "artifacts"
@@ -38,8 +42,13 @@ class RunLog:
         self.t0 = time.time()
 
     def log(self, stage: str, metric: str, value=None, **extra):
-        rec = {"ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
-               "elapsed_s": round(time.time() - self.t0, 3), "stage": stage, "metric": metric, "value": value}
+        rec = {
+            "ts": datetime.now(UTC).isoformat(timespec="milliseconds"),
+            "elapsed_s": round(time.time() - self.t0, 3),
+            "stage": stage,
+            "metric": metric,
+            "value": value,
+        }
         rec.update(extra)
         with open(self.path, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec, default=_json_default) + "\n")
@@ -65,8 +74,13 @@ class LiveView:
         self.console = Console()
         self.enabled = enabled and self.console.is_terminal
         self.narrow = self.console.width < 100
-        cols = [SpinnerColumn(), TextColumn("[bold]{task.description:<11}"), BarColumn(bar_width=12 if self.narrow else 30),
-                MofNCompleteColumn(), TimeElapsedColumn()]
+        cols = [
+            SpinnerColumn(),
+            TextColumn("[bold]{task.description:<11}"),
+            BarColumn(bar_width=12 if self.narrow else 30),
+            MofNCompleteColumn(),
+            TimeElapsedColumn(),
+        ]
         if not self.narrow:
             cols.insert(4, TextColumn("{task.fields[note]}"))
         self.progress = Progress(*cols, console=self.console)
@@ -97,14 +111,22 @@ class LiveView:
             from rich import box
 
             t = Table(title="Optuna: PR-AUC per trial (CV)", box=box.SIMPLE_HEAD, padding=(0, 1), expand=False)
-            cols = ["#", "PR-AUC", "best", "lr", "leaves", "trees"] + ([] if self.narrow else ["min_child", "spw", "sec"])
+            cols = ["#", "PR-AUC", "best", "lr", "leaves", "trees"] + (
+                [] if self.narrow else ["min_child", "spw", "sec"]
+            )
             for c in cols:
                 t.add_column(c, justify="right", no_wrap=True)
             for r in self.trials[-12:]:
                 style = "bold green" if r["value"] == r["best"] else None
                 p = r["params"]
-                cells = [str(r["number"]), f"{r['value']:.4f}", f"{r['best']:.4f}", f"{p['learning_rate']:.3f}",
-                         str(p["num_leaves"]), str(p["n_estimators"])]
+                cells = [
+                    str(r["number"]),
+                    f"{r['value']:.4f}",
+                    f"{r['best']:.4f}",
+                    f"{p['learning_rate']:.3f}",
+                    str(p["num_leaves"]),
+                    str(p["n_estimators"]),
+                ]
                 if not self.narrow:
                     cells += [str(p["min_child_samples"]), f"{p['scale_pos_weight']:.1f}", f"{r['seconds']:.1f}"]
                 t.add_row(*cells, style=style)
@@ -165,16 +187,18 @@ def lib_versions() -> dict:
 
     out = {"python": platform.python_version()}
     for p in ["pandas", "numpy", "scikit-learn", "lightgbm", "shap", "optuna", "streamlit", "plotly"]:
-        try:
+        with contextlib.suppress(md.PackageNotFoundError):
             out[p] = md.version(p)
-        except md.PackageNotFoundError:
-            pass
     return out
 
 
 def machine_info() -> dict:
-    return {"cpu_count": CPU, "platform": platform.platform(), "processor": platform.processor(),
-            "machine": platform.machine()}
+    return {
+        "cpu_count": CPU,
+        "platform": platform.platform(),
+        "processor": platform.processor(),
+        "machine": platform.machine(),
+    }
 
 
 def average_precision_weighted(y_sorted: np.ndarray, ends: np.ndarray, w: np.ndarray) -> float:
@@ -216,8 +240,9 @@ def reliability_table(y, p) -> list[dict]:
     df = pd.DataFrame({"y": np.asarray(y), "p": np.asarray(p, dtype="float64")})
     df["bin"] = pd.cut(df["p"], bins=RELIABILITY_EDGES, include_lowest=True, right=False)
     df.loc[df["p"] >= 1.0, "bin"] = df["bin"].cat.categories[-1]
-    g = df.groupby("bin", observed=True).agg(n=("y", "size"), frauds=("y", "sum"), mean_predicted=("p", "mean"),
-                                             observed_rate=("y", "mean"))
+    g = df.groupby("bin", observed=True).agg(
+        n=("y", "size"), frauds=("y", "sum"), mean_predicted=("p", "mean"), observed_rate=("y", "mean")
+    )
     g["bin"] = [f"{iv.left:.2f}-{iv.right:.2f}" for iv in g.index]
     return g.reset_index(drop=True).to_dict(orient="records")
 
@@ -250,7 +275,8 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
 
     from . import data as D
     from .costs import best_threshold, confusion_at, cost_curve, downsample_curve
-    from .features import CATEGORICAL, FEATURES, NUMERIC, MerchantEncoder, build_features, model_frame
+    from .features import CATEGORICAL, CONTEXT, FEATURES, NUMERIC, MerchantEncoder, build_features, model_frame
+    from .monitoring import reference_profile
     from .score import Calibrator, FraudModel
 
     seed = int(cfg["seed"])
@@ -264,17 +290,37 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
     neg_frac = float(cfg["model"]["tuning_sample_negatives"])
     review_cost = float(cfg["costs"]["review_cost"])
     t_start = time.time()
-    started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    started_at = datetime.now(UTC).isoformat(timespec="seconds")
 
     view = LiveView(live_enabled)
     R = Runner(out, view)
     status_path = out / "run_status.json"
-    status_path.write_text(json.dumps({"state": "running", "pid": os.getpid(), "started": started_at,
-                                       "fast": fast, "trials": n_trials}), encoding="utf-8")
-    R.log.log("run", "config", {"fast": fast, "trials": n_trials, "sample_cards": sample_cards, "seed": seed,
-                                "review_cost": review_cost, "cpu_count": CPU})
-    M: dict = {"run": {"started_at": started_at, "fast": fast, "trials": n_trials, "sample_cards": sample_cards,
-                       "seed": seed, "config": cfg}}
+    atomic_write_text(
+        status_path,
+        json.dumps({"state": "running", "pid": os.getpid(), "started": started_at, "fast": fast, "trials": n_trials}),
+    )
+    R.log.log(
+        "run",
+        "config",
+        {
+            "fast": fast,
+            "trials": n_trials,
+            "sample_cards": sample_cards,
+            "seed": seed,
+            "review_cost": review_cost,
+            "cpu_count": CPU,
+        },
+    )
+    M: dict = {
+        "run": {
+            "started_at": started_at,
+            "fast": fast,
+            "trials": n_trials,
+            "sample_cards": sample_cards,
+            "seed": seed,
+            "config": cfg,
+        }
+    }
 
     with view:
         # ---------------------------------------------------------------- load
@@ -316,10 +362,13 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             y_fit, y_val, y_test = (d["is_fraud"].to_numpy().astype(int) for d in (fit, val, test))
             split_info = {}
             for name, d in [("fit", fit), ("validation", val), ("test", test)]:
-                split_info[name] = {"rows": int(len(d)), "frauds": int(d["is_fraud"].sum()),
-                                    "fraud_rate": float(d["is_fraud"].mean()),
-                                    "start": str(d["trans_date_trans_time"].min()),
-                                    "end": str(d["trans_date_trans_time"].max())}
+                split_info[name] = {
+                    "rows": int(len(d)),
+                    "frauds": int(d["is_fraud"].sum()),
+                    "fraud_rate": float(d["is_fraud"].mean()),
+                    "start": str(d["trans_date_trans_time"].min()),
+                    "end": str(d["trans_date_trans_time"].max()),
+                }
                 R.log.log("split", f"{name}_rows", int(len(d)))
                 R.log.log("split", f"{name}_frauds", int(d["is_fraud"].sum()))
             M["split"] = split_info
@@ -329,9 +378,13 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
         leaderboard = []
 
         def evaluate(name, p_val, fit_s, extra=None):
-            row = {"model": name, "pr_auc": float(average_precision_score(y_val, p_val)),
-                   "roc_auc": float(roc_auc_score(y_val, p_val)), "brier": float(brier_score_loss(y_val, p_val)),
-                   "fit_seconds": round(fit_s, 2)}
+            row = {
+                "model": name,
+                "pr_auc": float(average_precision_score(y_val, p_val)),
+                "roc_auc": float(roc_auc_score(y_val, p_val)),
+                "brier": float(brier_score_loss(y_val, p_val)),
+                "fit_seconds": round(fit_s, 2),
+            }
             row.update(extra or {})
             leaderboard.append(row)
             for k in ["pr_auc", "roc_auc", "brier"]:
@@ -343,13 +396,22 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
         with R.stage("baseline", 3) as st:
             # Logistic regression: log1p on non-negative numerics, impute, scale, one-hot categories.
             lr = make_pipeline(
-                ColumnTransformer([
-                    ("num", make_pipeline(FunctionTransformer(lambda a: np.log1p(np.clip(a, 0, None)),
-                                                              feature_names_out="one-to-one"),
-                                          SimpleImputer(strategy="median", add_indicator=True), StandardScaler()),
-                     NUMERIC),
-                    ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL),
-                ]),
+                ColumnTransformer(
+                    [
+                        (
+                            "num",
+                            make_pipeline(
+                                FunctionTransformer(
+                                    lambda a: np.log1p(np.clip(a, 0, None)), feature_names_out="one-to-one"
+                                ),
+                                SimpleImputer(strategy="median", add_indicator=True),
+                                StandardScaler(),
+                            ),
+                            NUMERIC,
+                        ),
+                        ("cat", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL),
+                    ]
+                ),
                 LogisticRegression(max_iter=2000, C=1.0),
             )
             t0 = time.time()
@@ -363,8 +425,14 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
                     Z[c] = Z[c].cat.codes
                 return Z.fillna(-1).to_numpy(dtype="float32")
 
-            rf = RandomForestClassifier(n_estimators=rf_trees, min_samples_leaf=5, max_features="sqrt",
-                                        max_samples=0.3, n_jobs=-1, random_state=seed)
+            rf = RandomForestClassifier(
+                n_estimators=rf_trees,
+                min_samples_leaf=5,
+                max_features="sqrt",
+                max_samples=0.3,
+                n_jobs=-1,
+                random_state=seed,
+            )
             t0 = time.time()
             rf.fit(to_numeric(X_fit), y_fit)
             r = evaluate("Random forest", rf.predict_proba(to_numeric(X_val))[:, 1], time.time() - t0)
@@ -382,11 +450,13 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         skf = StratifiedKFold(n_splits=int(cfg["model"]["cv_folds"]), shuffle=True, random_state=seed)
-        folds = [(subsample_negatives(tr, y_fit, neg_frac, seed + k), te)
-                 for k, (tr, te) in enumerate(skf.split(np.zeros(len(y_fit)), y_fit))]
+        folds = [
+            (subsample_negatives(tr, y_fit, neg_frac, seed + k), te)
+            for k, (tr, te) in enumerate(skf.split(np.zeros(len(y_fit)), y_fit))
+        ]
         trial_rows = []
 
-        def objective(trial: "optuna.Trial"):
+        def objective(trial: optuna.Trial):
             params = {
                 "n_estimators": trial.suggest_int("n_estimators", 150, 1200, step=50),
                 "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2, log=True),
@@ -406,34 +476,63 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             return float(np.mean(scores))
 
         with R.stage("tuning", n_trials + 1) as st:
+
             def on_trial(study, trial):
                 best = study.best_value
-                row = {"number": trial.number, "value": trial.value, "best": best,
-                       "seconds": (trial.datetime_complete - trial.datetime_start).total_seconds(),
-                       "params": trial.params}
+                row = {
+                    "number": trial.number,
+                    "value": trial.value,
+                    "best": best,
+                    "seconds": (trial.datetime_complete - trial.datetime_start).total_seconds(),
+                    "params": trial.params,
+                }
                 view.trials.append(row)
-                trial_rows.append({"trial": trial.number, "pr_auc_cv": trial.value, "best_so_far": best,
-                                   "seconds": row["seconds"], **trial.params})
-                R.log.log("tuning", "trial_pr_auc", trial.value, trial=trial.number, best_so_far=best,
-                          params=trial.params, seconds=row["seconds"])
+                trial_rows.append(
+                    {
+                        "trial": trial.number,
+                        "pr_auc_cv": trial.value,
+                        "best_so_far": best,
+                        "seconds": row["seconds"],
+                        **trial.params,
+                    }
+                )
+                R.log.log(
+                    "tuning",
+                    "trial_pr_auc",
+                    trial.value,
+                    trial=trial.number,
+                    best_so_far=best,
+                    params=trial.params,
+                    seconds=row["seconds"],
+                )
                 view.advance("tuning", f"trial {trial.number}: {trial.value:.4f} (best {best:.4f})")
 
             study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=seed))
             study.optimize(objective, n_trials=n_trials, callbacks=[on_trial])
-            pd.DataFrame(trial_rows).to_csv(out / "trials.csv", index=False)
+            atomic_write_text(out / "trials.csv", pd.DataFrame(trial_rows).to_csv(index=False))
             best_params = dict(study.best_params)
             R.log.log("tuning", "best_cv_pr_auc", study.best_value, params=best_params)
             fit_idx = subsample_negatives(np.arange(len(y_fit)), y_fit, neg_frac, seed)
             t0 = time.time()
             lgb_tuned = LGBMClassifier(**best_params, subsample_freq=1, **lgbm_base(seed)).fit(
-                X_fit.iloc[fit_idx], y_fit[fit_idx])
-            r = evaluate("LightGBM tuned (Optuna)", lgb_tuned.predict_proba(X_val)[:, 1], time.time() - t0,
-                         {"cv_pr_auc": float(study.best_value)})
+                X_fit.iloc[fit_idx], y_fit[fit_idx]
+            )
+            r = evaluate(
+                "LightGBM tuned (Optuna)",
+                lgb_tuned.predict_proba(X_val)[:, 1],
+                time.time() - t0,
+                {"cv_pr_auc": float(study.best_value)},
+            )
             models["LightGBM tuned (Optuna)"] = lgb_tuned
             view.advance("tuning", f"tuned model val PR-AUC {r['pr_auc']:.4f}")
             st["note"] = f"best CV PR-AUC {study.best_value:.4f}"
-            M["tuning"] = {"trials": n_trials, "best_cv_pr_auc": float(study.best_value), "best_params": best_params,
-                           "cv_folds": int(cfg["model"]["cv_folds"]), "fit_negative_fraction": neg_frac}
+            M["tuning"] = {
+                "trials": n_trials,
+                "best_cv_pr_auc": float(study.best_value),
+                "best_params": best_params,
+                "cv_folds": int(cfg["model"]["cv_folds"]),
+                "fit_negative_fraction": neg_frac,
+            }
 
         leaderboard.sort(key=lambda r: -r["pr_auc"])
         lgb_rows = [r for r in leaderboard if r["model"] in models]
@@ -453,7 +552,8 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             cal = Calibrator(method).fit(p_val_raw, y_val)
             p_val = cal.transform(p_val_raw)
             M["calibration"] = {
-                "method": method, "validation_positives": n_pos_val,
+                "method": method,
+                "validation_positives": n_pos_val,
                 "validation_brier_before": float(brier_score_loss(y_val, p_val_raw)),
                 "validation_brier_after": float(brier_score_loss(y_val, p_val)),
                 "validation_reliability_before": reliability_table(y_val, p_val_raw),
@@ -463,16 +563,22 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             R.log.log("calibration", "val_brier_before", M["calibration"]["validation_brier_before"])
             R.log.log("calibration", "val_brier_after", M["calibration"]["validation_brier_after"])
             view.advance("calibration")
-            st["note"] = (f"{method}: Brier {M['calibration']['validation_brier_before']:.5f} -> "
-                          f"{M['calibration']['validation_brier_after']:.5f}")
+            st["note"] = (
+                f"{method}: Brier {M['calibration']['validation_brier_before']:.5f} -> "
+                f"{M['calibration']['validation_brier_after']:.5f}"
+            )
 
         # ---------------------------------------------------------------- threshold
         with R.stage("threshold", 1) as st:
             thr, curve_val = best_threshold(y_val, p_val, val["amt"].to_numpy(), review_cost)
             at_val = confusion_at(y_val, p_val, val["amt"].to_numpy(), thr, review_cost)
-            M["threshold"] = {"value": thr, "review_cost": review_cost, "chosen_on": "validation",
-                              "validation_at_threshold": at_val,
-                              "validation_curve": downsample_curve(curve_val).to_dict(orient="list")}
+            M["threshold"] = {
+                "value": thr,
+                "review_cost": review_cost,
+                "chosen_on": "validation",
+                "validation_at_threshold": at_val,
+                "validation_curve": downsample_curve(curve_val).to_dict(orient="list"),
+            }
             R.log.log("threshold", "threshold", thr)
             R.log.log("threshold", "val_total_cost", at_val["total_cost"])
             R.log.log("threshold", "val_recall", at_val["recall"])
@@ -490,7 +596,9 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             curve_test = cost_curve(y_test, p_test, test["amt"].to_numpy(), review_cost)
             view.advance("test")
             M["test"] = {
-                "pr_auc": pr, "pr_auc_ci95": [lo, hi], "bootstrap_resamples": n_boot,
+                "pr_auc": pr,
+                "pr_auc_ci95": [lo, hi],
+                "bootstrap_resamples": n_boot,
                 "pr_auc_uncalibrated": pr_raw,
                 "roc_auc": float(roc_auc_score(y_test, p_test)),
                 "brier_before_calibration": float(brier_score_loss(y_test, p_test_raw)),
@@ -507,8 +615,10 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             for k in ["recall", "precision", "false_alarms_per_10k_genuine", "saved_vs_no_model", "flagged"]:
                 R.log.log("test", k, at_test[k])
             view.advance("test")
-            st["note"] = (f"recall {at_test['recall']:.3f}, saved {at_test['saved_vs_no_model']:,.0f} "
-                          f"of {at_test['fraud_amount']:,.0f}")
+            st["note"] = (
+                f"recall {at_test['recall']:.3f}, saved {at_test['saved_vs_no_model']:,.0f} "
+                f"of {at_test['fraud_amount']:,.0f}"
+            )
 
         # ---------------------------------------------------------------- save
         with R.stage("save", 3) as st:
@@ -526,36 +636,106 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             M["global_importance"] = {"sample": "validation (5,000 random rows)", "mean_abs_shap": imp.to_dict()}
             view.advance("save", "global SHAP")
 
-            fm = FraudModel(model=model, calibrator=cal, encoder=enc, categories=cats, threshold=thr,
-                            bands={k: cfg["bands"].get(k) for k in ["medium", "high", "critical"]},
-                            review_cost=review_cost, model_name=chosen, data_source=raw.source,
-                            versions=lib_versions())
-            fm.save(out / "model.joblib")
+            finished = datetime.now(UTC)
+            fm = FraudModel(
+                model=model,
+                calibrator=cal,
+                encoder=enc,
+                categories=cats,
+                threshold=thr,
+                bands={k: cfg["bands"].get(k) for k in ["medium", "high", "critical"]},
+                review_cost=review_cost,
+                model_name=chosen,
+                data_source=raw.source,
+                versions=lib_versions(),
+            )
+            # Stage every artifact in a temp file first, then swap them in with os.replace, so the app or the
+            # API never reads a half-written model while a retrain is finishing.
+            staged: list[tuple[Path, Path]] = []
+
+            def stage(name: str, writer):
+                tmp = atomic_path(out / name)
+                writer(tmp)
+                staged.append((tmp, out / name))
+
+            model_tmp = atomic_path(out / "model.joblib")
+            fm.save(model_tmp)
+            digest = hashlib.sha256(model_tmp.read_bytes()).hexdigest()[:8]
+            version = f"{finished:%Y%m%d-%H%M%S}-{digest}"
+            fm.version = version
+            fm.save(model_tmp)  # re-save with the version embedded
+            staged.append((model_tmp, out / "model.joblib"))
+
+            M["run"]["model_version"] = version
             M["versions"] = lib_versions()
             M["machine"] = machine_info()
             M["features"] = FEATURES
             M["durations_s"] = dict(R.durations)
-            M["run"]["finished_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            M["run"]["finished_at"] = finished.isoformat(timespec="seconds")
             M["run"]["total_seconds"] = round(time.time() - t_start, 1)
 
+            profile = reference_profile(X_fit, NUMERIC, CATEGORICAL, scores=p_val)
+            profile["model_version"] = version
+            profile["reference"] = "fit period (features), validation period (score)"
+            stage(
+                "reference_profile.json",
+                lambda t: t.write_text(json.dumps(profile, default=_json_default), encoding="utf-8"),
+            )
+
             # scored test set for the app (gitignored), exactly the numbers in metrics.json
-            keep = ["trans_num", "trans_date_trans_time", "cc_num", "merchant", "category", "amt", "gender", "city",
-                    "state", "lat", "long", "city_pop", "job", "dob", "merch_lat", "merch_long", "is_fraud"]
-            ctx = ["prev_city_km", "minutes_since_prev", "card_mean_amt", "cat_mean_amt"]
+            keep = [
+                "trans_num",
+                "trans_date_trans_time",
+                "cc_num",
+                "merchant",
+                "category",
+                "amt",
+                "gender",
+                "city",
+                "state",
+                "lat",
+                "long",
+                "city_pop",
+                "job",
+                "dob",
+                "merch_lat",
+                "merch_long",
+                "is_fraud",
+            ]
+            ctx = list(CONTEXT)
             scored = test[keep + [c for c in FEATURES if c not in keep] + ctx].copy()
             scored["p_raw"] = p_test_raw
             scored["p"] = p_test
-            scored.reset_index(drop=True).to_parquet(out / "test_scored.parquet", index=False)
+            stage("test_scored.parquet", lambda t: scored.reset_index(drop=True).to_parquet(t, index=False))
             hist = combo.drop(columns=["_split"])
-            hist.to_parquet(out / "history.parquet", index=False)
+            stage("history.parquet", lambda t: hist.to_parquet(t, index=False))
             view.advance("save", "model + scored test set")
-            with open(out / "metrics.json", "w", encoding="utf-8") as f:
-                json.dump(M, f, indent=2, default=_json_default)
+            metrics_text = json.dumps(M, indent=2, default=_json_default)
+            stage("metrics.json", lambda t: t.write_text(metrics_text, encoding="utf-8"))
+            for tmp, final in staged:  # metrics.json last: it is what the app checks first
+                os.replace(tmp, final)
+            # small per-run archive (committable): metrics + trial history of every version
+            run_dir = out / "runs" / version
+            run_dir.mkdir(parents=True, exist_ok=True)
+            atomic_write_text(run_dir / "metrics.json", metrics_text)
+            if (out / "trials.csv").exists():
+                atomic_write_bytes(run_dir / "trials.csv", (out / "trials.csv").read_bytes())
+            R.log.log("save", "model_version", version)
             view.advance("save", "metrics.json")
-            st["note"] = str(out)
+            st["note"] = f"{out} (model {version})"
 
-    status_path.write_text(json.dumps({"state": "finished", "pid": os.getpid(), "started": started_at,
-                                       "finished": M["run"]["finished_at"]}), encoding="utf-8")
+    atomic_write_text(
+        status_path,
+        json.dumps(
+            {
+                "state": "finished",
+                "pid": os.getpid(),
+                "started": started_at,
+                "finished": M["run"]["finished_at"],
+                "model_version": M["run"]["model_version"],
+            }
+        ),
+    )
     R.log.log("run", "finished", M["run"]["total_seconds"])
     print_summary(view, M)
     return M
@@ -571,15 +751,22 @@ def print_summary(view: LiveView, M: dict):
         t.add_column(c, justify="right" if c != "model" else "left")
     for r in M["leaderboard"]:
         name = r["model"].replace("LightGBM", "LGBM").replace("Logistic regression", "LogReg").replace(" (Optuna)", "")
-        t.add_row(("* " if r["selected"] else "  ") + name, f"{r['pr_auc']:.4f}", f"{r['roc_auc']:.4f}",
-                  f"{r['brier']:.5f}", f"{r['fit_seconds']:.1f}")
+        t.add_row(
+            ("* " if r["selected"] else "  ") + name,
+            f"{r['pr_auc']:.4f}",
+            f"{r['roc_auc']:.4f}",
+            f"{r['brier']:.5f}",
+            f"{r['fit_seconds']:.1f}",
+        )
     view.print(t)
     te = M["test"]
     a = te["at_threshold"]
-    view.print(f"[bold]Test (once):[/] PR-AUC {te['pr_auc']:.4f} (95% CI {te['pr_auc_ci95'][0]:.4f}-"
-               f"{te['pr_auc_ci95'][1]:.4f}), recall {a['recall']:.3f}, precision {a['precision']:.3f}, "
-               f"false alarms/10k genuine {a['false_alarms_per_10k_genuine']:.1f}, "
-               f"saved {a['saved_vs_no_model']:,.0f} of {a['fraud_amount']:,.0f} at threshold {a['threshold']:.4f}")
+    view.print(
+        f"[bold]Test (once):[/] PR-AUC {te['pr_auc']:.4f} (95% CI {te['pr_auc_ci95'][0]:.4f}-"
+        f"{te['pr_auc_ci95'][1]:.4f}), recall {a['recall']:.3f}, precision {a['precision']:.3f}, "
+        f"false alarms/10k genuine {a['false_alarms_per_10k_genuine']:.1f}, "
+        f"saved {a['saved_vs_no_model']:,.0f} of {a['fraud_amount']:,.0f} at threshold {a['threshold']:.4f}"
+    )
     view.print(f"Total time {M['run']['total_seconds']:.0f}s on {M['machine']['cpu_count']} CPUs")
 
 
@@ -592,18 +779,30 @@ def main(argv=None):
     ap.add_argument("--out", default=str(DEFAULT_OUT), help="artifacts folder")
     ap.add_argument("--no-live", action="store_true", help="plain log lines instead of the live view")
     args = ap.parse_args(argv)
-    with open(args.config, encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
+    from .config import load_config
+
+    cfg = load_config(args.config).model_dump()  # validated; a bad value stops here with a clear message
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     try:
         run(cfg, out, args.fast, args.trials, args.sample_cards, not args.no_live)
     except BaseException as e:  # record failures for the Training Lab, then re-raise
-        (out / "run_status.json").write_text(json.dumps({"state": "failed", "pid": os.getpid(), "error": repr(e)}),
-                                             encoding="utf-8")
+        atomic_write_text(
+            out / "run_status.json", json.dumps({"state": "failed", "pid": os.getpid(), "error": repr(e)})
+        )
         with open(out / "training_log.jsonl", "a", encoding="utf-8") as f:
-            f.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat(), "stage": "run", "metric": "failed",
-                                "value": repr(e), "traceback": traceback.format_exc()}) + "\n")
+            f.write(
+                json.dumps(
+                    {
+                        "ts": datetime.now(UTC).isoformat(),
+                        "stage": "run",
+                        "metric": "failed",
+                        "value": repr(e),
+                        "traceback": traceback.format_exc(),
+                    }
+                )
+                + "\n"
+            )
         raise
 
 

@@ -1,24 +1,35 @@
-"""Capture README screenshots of a running FraudLens app with Playwright.
+"""Capture README screenshots with Playwright.
 
-    streamlit run app/streamlit_app.py            (in one terminal)
-    python scripts/screenshots.py                 (in another)
+Starts its own Streamlit server on a throwaway database with a generated admin account (the
+password is random and never printed), signs in through the UI and visits every page.
+
+    python scripts/screenshots.py
 """
+
 from __future__ import annotations
 
+import os
+import secrets
+import subprocess
 import sys
+import tempfile
+import time
+import urllib.request
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-BASE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8501"
-OUT = Path(__file__).resolve().parents[1] / "docs" / "screenshots"
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+OUT = ROOT / "docs" / "screenshots"
+PORT = 8599
+BASE = f"http://localhost:{PORT}"
 
 
 def settle(page, extra_ms: int = 2500):
     page.wait_for_selector('[data-testid="stApp"]', timeout=60_000)
     page.wait_for_timeout(1500)
-    # wait while Streamlit shows its "running" indicator
-    for _ in range(120):
+    for _ in range(120):  # wait while Streamlit shows its "running" indicator
         if page.locator('[data-testid="stStatusWidget"]').count() == 0:
             break
         page.wait_for_timeout(500)
@@ -41,43 +52,79 @@ def shot(page, name: str, full: bool = True):
     print("saved", OUT / f"{name}.png")
 
 
+def goto(page, title: str, extra_ms: int = 2500):
+    page.get_by_role("link", name=title, exact=True).click()  # client-side navigation keeps the session
+    settle(page, extra_ms)
+
+
 def main():
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=1)
-        page.goto(f"{BASE}/Dashboard")
-        settle(page)
-        shot(page, "1_dashboard")
+    from fraudkit.auth import UserStore
+    from fraudkit.db import Database
 
-        page.goto(f"{BASE}/Check_Transaction")
-        settle(page)
-        shot(page, "2_check_transaction")
-        amount = page.get_by_label("Amount (EUR)")
-        amount.fill("35")
-        page.get_by_role("button", name="Re-score").click()
-        settle(page)
-        shot(page, "2b_what_if")
+    tmp = Path(tempfile.mkdtemp(prefix="fraudlens_shots_"))
+    db_path = tmp / "demo.sqlite"
+    user, password = "demo.admin", "Demo-" + secrets.token_urlsafe(18) + "9"
+    UserStore(Database(db_path)).create(user, password, "admin", actor="screenshots")
+    env = {**os.environ, "FRAUDLENS_DB": str(db_path)}
+    server = subprocess.Popen(
+        [sys.executable, "-m", "streamlit", "run", "app/streamlit_app.py", "--server.port", str(PORT)],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        for _ in range(60):
+            try:
+                urllib.request.urlopen(f"{BASE}/_stcore/health", timeout=2)  # noqa: S310 - fixed localhost URL
+                break
+            except OSError:
+                time.sleep(1)
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page(viewport={"width": 1280, "height": 900}, device_scale_factor=1)
+            page.goto(BASE)
+            settle(page, 1000)
+            shot(page, "0_login", full=False)
+            page.get_by_role("textbox", name="Username").fill(user)
+            page.get_by_role("textbox", name="Password").fill(password)
+            page.get_by_role("button", name="Sign in").click()
+            settle(page)
+            shot(page, "1_dashboard")
 
-        page.goto(f"{BASE}/Batch_Scoring")
-        settle(page)
-        page.get_by_role("button", name="Or score the 500-row sample file").click()
-        settle(page, 4000)
-        shot(page, "3_batch_scoring")
+            goto(page, "Check a transaction")
+            shot(page, "2_check_transaction")
+            page.get_by_label("Amount (€)").fill("35")
+            page.get_by_role("button", name="Re-score").click()
+            settle(page)
+            shot(page, "2b_what_if")
 
-        page.goto(f"{BASE}/Case_Queue")
-        settle(page)
-        page.get_by_role("button", name="Add top 25 by risk").click()
-        settle(page)
-        shot(page, "4_case_queue")
+            goto(page, "Batch scoring")
+            page.get_by_role("button", name="Or score the 500-row sample file").click()
+            settle(page, 4000)
+            shot(page, "3_batch_scoring")
 
-        page.goto(f"{BASE}/Model_Report")
-        settle(page, 4000)
-        shot(page, "5_model_report")
+            goto(page, "Case queue")
+            page.get_by_role("button", name="Add top 25 by risk").click()
+            settle(page)
+            page.get_by_role("button", name="Assign to me").click()
+            settle(page)
+            page.get_by_role("button", name="Confirm fraud").click()
+            settle(page)
+            shot(page, "4_case_queue")
 
-        page.goto(f"{BASE}/Training_Lab")
-        settle(page, 4000)
-        shot(page, "6_training_lab")
-        browser.close()
+            goto(page, "Monitoring", 5000)
+            shot(page, "7_monitoring")
+            goto(page, "Model report", 4000)
+            shot(page, "5_model_report")
+            goto(page, "Training Lab", 4000)
+            shot(page, "6_training_lab")
+            goto(page, "Admin")
+            shot(page, "8_admin")
+            browser.close()
+    finally:
+        server.terminate()
+        server.wait(timeout=30)
 
 
 if __name__ == "__main__":

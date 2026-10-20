@@ -68,3 +68,28 @@ Machine: 32 logical CPUs, Windows 11, Python 3.11.15 (installed with uv; system 
 - Final full training run repeated in the terminal after the reliability-table change: every metric identical to the first full run (full-scale reproducibility).
 - Playwright screenshots of all pages in `docs/screenshots/` (`scripts/screenshots.py`), reviewed visually.
 - README results table generated from `metrics.json` by `scripts/results_table.py`.
+
+## M8 - Audit and enterprise hardening (done)
+**Audit findings (all fixed, each with a regression test):**
+- Stored XSS: merchant/city/reason text from an uploaded CSV was rendered as raw HTML in the case queue and Check page. All data-derived text is now escaped.
+- CSV formula injection in every CSV download: cells starting with `= + - @` are now prefixed with `'`.
+- Retrain overwrote `model.joblib`/parquet in place, so readers could load a half-written file. All artifacts are now staged and swapped atomically.
+- The batch-scoring cache was not keyed on the model, so it served stale scores after a retrain.
+- API and app could disagree on risk bands (model file vs config). Both now use one serving loader that reads the config.
+- SQLite without WAL/busy-timeout ("database is locked" with concurrent users).
+- `inf` ratio features possible from uploads; a malformed `is_fraud` column crashed batch scoring; the manual form listed only 400 of 924 cards; `" | "`-joined reasons broke on merchant names containing a pipe.
+- Sidebar threshold/review cost silently reset on page switches (Streamlit drops widget state). Dashboard numbers could have been computed with cost 0.
+- Unassigned cases showed "assignee nan", and "Unassign" was offered for them.
+- **Model defect found by the new drift monitor:** `card_txn_count` is a lifetime counter that only grows (PSI 3.7-6.1 every test month, 5th most important feature). Replaced with stationary `n_txn_30d`. Test PR-AUC 0.9682 -> **0.9722** (CI 0.9666-0.9773), recall 95.6% -> 96.4%, saved 1,102,221 -> 1,104,591, precision 85.5% -> 81.1%, threshold 0.1111 -> 0.0238.
+
+**Platform added:**
+- Login with PBKDF2 (600k iterations), lockout, session timeout, forced change of admin-set passwords, first-run admin setup; roles viewer/analyst/admin enforced server-side on every page and action.
+- Admin page (users, API keys shown once and stored hashed, audit log with export, system status, model versions) and My account page.
+- Case queue: assignment, "my cases", case age, CSV export, actor recorded on every decision, card numbers stored as last 4 digits only, admin-only clear with confirmation (logged).
+- Monitoring page: monthly PSI drift per feature and for the score vs the training reference profile, alerts, weekly precision/recall/flag rate.
+- Versioned models (`<UTC time>-<sha256>`), run archive in `artifacts/runs/`, model version on API responses and on cases.
+- API `/v1` (score, model, health, ready), DB-backed API keys plus bootstrap env key, per-key rate limit (429), batch limit (413), request IDs, JSON access logs without card numbers, hot model reload, legacy routes kept.
+- Validated config (pydantic, fails fast), DB migrations (an old case DB is upgraded in place, tested), operator CLI `python -m fraudkit.admin`.
+- Ops: non-root Dockerfile with healthcheck, docker-compose (localhost-only ports), `.env.example`, `pyproject.toml` (ruff + pytest), GitHub Actions CI (lint + tests; data-dependent tests skip), SECURITY.md.
+- Tests: 61 passing (was 23). `ruff check` and `ruff format --check` are clean.
+- Final model: version `20261020-154750-a6506be0`, full run 502 s.

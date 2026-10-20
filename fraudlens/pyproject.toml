@@ -1,0 +1,29 @@
+[project]
+name = "fraudlens"
+version = "1.1.0"
+description = "Explainable card-fraud scoring: calibrated LightGBM, SHAP reason codes, analyst case queue, scoring API."
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [".venv", "artifacts", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "S", "UP", "SIM", "PL"]
+ignore = [
+  "E402",     # Streamlit pages adjust sys.path before importing
+  "PLC0415",  # lazy imports keep the app and CLI start-up fast
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917", "PLR2004",
+  "S311",     # random numbers are for sampling, not security
+  "S603",     # subprocess calls use fixed argument lists, no shell
+  "S608",     # SQL is parameterised; only fixed WHERE fragments are concatenated
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106", "PLW0108"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning:starlette.*", "ignore:Using `httpx`:DeprecationWarning"]

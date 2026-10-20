@@ -4,6 +4,7 @@ Contributions are in log-odds (the LightGBM raw margin). Related features are gr
 (e.g. amt + log_amt) so a reason is stated once; a reason is only produced when its
 group's total contribution points in the stated direction by at least MIN_CONTRIB.
 """
+
 from __future__ import annotations
 
 import re
@@ -12,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 import numpy as np
 import pandas as pd
 
-from .features import FEATURES, IMPOSSIBLE_SPEED_KMH, haversine_km
+from .features import FEATURES, haversine_km
 from .score import ACTIONS, FraudModel
 
 MIN_CONTRIB = 0.05  # log-odds; smaller contributions are not worth a sentence
@@ -34,23 +35,24 @@ GROUPS: dict[str, list[str]] = {
     "age": ["age"],
     "city": ["log_city_pop"],
     "gender": ["gender"],
-    "history": ["card_txn_count"],
+    "history": ["n_txn_30d"],
 }
-assert sorted(sum(GROUPS.values(), [])) == sorted(FEATURES), "every feature must belong to exactly one group"
+if sorted(sum(GROUPS.values(), [])) != sorted(FEATURES):
+    raise RuntimeError("every feature must belong to exactly one explanation group")
 
 
 @dataclass
 class Reason:
     group: str
     text: str
-    contribution: float          # summed SHAP (log-odds) of the group's features
-    direction: str               # "raises" | "lowers"
+    contribution: float  # summed SHAP (log-odds) of the group's features
+    direction: str  # "raises" | "lowers"
     features: list[str] = field(default_factory=list)
 
 
 @dataclass
 class Explanation:
-    probability: float           # calibrated
+    probability: float  # calibrated
     raw_probability: float
     band: str
     action: str
@@ -58,7 +60,7 @@ class Explanation:
     raising: list[Reason]
     lowering: list[Reason]
     base_value: float
-    contributions: dict          # feature -> SHAP (log-odds)
+    contributions: dict  # feature -> SHAP (log-odds)
 
     def to_dict(self):
         return asdict(self)
@@ -96,7 +98,7 @@ def shap_matrix(fm: FraudModel, X: pd.DataFrame) -> tuple[np.ndarray, float]:
 
 # --------------------------------------------------------------------------- text
 def _money(x: float) -> str:
-    return f"EUR {x:,.2f}"
+    return f"€{x:,.2f}"
 
 
 def _clock(ts: pd.Timestamp) -> str:
@@ -156,13 +158,19 @@ def reason_text(group: str, raises: bool, r: pd.Series, fm: FraudModel) -> str:
         return f"Transaction on a {DAYS[int(r['day_of_week'])]}" + (" (riskier day in the data)" if raises else "")
     if group == "distance":
         d = float(r["dist_home_km"])
-        return (f"Merchant is {d:,.0f} km from the cardholder's home" if raises
-                else f"Merchant is {d:,.0f} km from the cardholder's home (normal range)")
+        return (
+            f"Merchant is {d:,.0f} km from the cardholder's home"
+            if raises
+            else f"Merchant is {d:,.0f} km from the cardholder's home (normal range)"
+        )
     if group == "velocity":
         n1, n24, s24 = int(r["n_txn_1h"]), int(r["n_txn_24h"]), float(r["amt_sum_24h"])
         if raises:
             if n1 >= 1:
-                return f"{n1} other transaction(s) on this card in the last hour, {n24} in the last 24 hours ({_money(s24)})"
+                return (
+                    f"{n1} other transaction(s) on this card in the last hour, "
+                    f"{n24} in the last 24 hours ({_money(s24)})"
+                )
             return f"{n24} earlier transaction(s) on this card in the last 24 hours totalling {_money(s24)}"
         return f"Usual activity level: {n24} transaction(s) in the last 24 hours ({_money(s24)})"
     if group == "recency":
@@ -179,18 +187,30 @@ def reason_text(group: str, raises: bool, r: pd.Series, fm: FraudModel) -> str:
         if pd.isna(km):
             return "No previous transaction location to compare with"
         if raises and int(r["impossible_travel"]):
-            return (f"Previous transaction was {_fmt_minutes(float(m))} earlier, {km:,.0f} km away "
-                    f"(impossible travel, {spd:,.0f} km/h)")
+            return (
+                f"Previous transaction was {_fmt_minutes(float(m))} earlier, {km:,.0f} km away "
+                f"(impossible travel, {spd:,.0f} km/h)"
+            )
         if raises:
-            return f"Card moved {km:,.0f} km since its previous transaction {_fmt_minutes(float(m))} earlier ({spd:,.0f} km/h)"
+            return (
+                f"Card moved {km:,.0f} km since its previous transaction "
+                f"{_fmt_minutes(float(m))} earlier ({spd:,.0f} km/h)"
+            )
         return f"Location is consistent with the previous transaction ({km:,.0f} km in {_fmt_minutes(float(m))})"
     if group == "first_cat":
         if int(r["first_time_category"]):
-            return f"First time this card is used for '{cat}'" if raises else f"First '{cat}' purchase, but this is not unusual here"
+            return (
+                f"First time this card is used for '{cat}'"
+                if raises
+                else f"First '{cat}' purchase, but this is not unusual here"
+            )
         return f"This card has bought '{cat}' before" if not raises else f"Repeat '{cat}' purchase on this card"
     if group == "category":
-        return (f"Category '{cat}' is often targeted by fraud" if raises
-                else f"Category '{cat}' is rarely involved in fraud")
+        return (
+            f"Category '{cat}' is often targeted by fraud"
+            if raises
+            else f"Category '{cat}' is rarely involved in fraud"
+        )
     if group == "merchant":
         te, prior = float(r["merchant_te"]), fm.encoder.prior_
         m = str(r["merchant"])
@@ -205,9 +225,10 @@ def reason_text(group: str, raises: bool, r: pd.Series, fm: FraudModel) -> str:
     if group == "gender":
         return f"Cardholder gender ({r['gender']}): fraud rates differ by gender in the data"
     if group == "history":
-        n = int(r["card_txn_count"])
-        return (f"Card has little history ({n} previous transactions)" if raises
-                else f"Established card with {n:,} previous transactions")
+        n = int(r["n_txn_30d"])
+        if raises:
+            return f"Little recent activity on this card ({n} transaction(s) in the previous 30 days)"
+        return f"Regular use of this card ({n} transactions in the previous 30 days)"
     raise KeyError(group)
 
 
@@ -216,8 +237,11 @@ def build_reasons(contrib: dict, row: pd.Series, fm: FraudModel, top_raising: in
     totals = {g: float(sum(contrib[f] for f in feats)) for g, feats in GROUPS.items()}
     ups = sorted([g for g, v in totals.items() if v >= MIN_CONTRIB], key=lambda g: -totals[g])[:top_raising]
     downs = sorted([g for g, v in totals.items() if v <= -MIN_CONTRIB], key=lambda g: totals[g])[:top_lowering]
-    mk = lambda g, up: Reason(g, reason_text(g, up, row, fm), totals[g], "raises" if up else "lowers",  # noqa: E731
-                              [f for f in GROUPS[g] if contrib[f] != 0])
+
+    def mk(g: str, up: bool) -> Reason:
+        features = [f for f in GROUPS[g] if contrib[f] != 0]
+        return Reason(g, reason_text(g, up, row, fm), totals[g], "raises" if up else "lowers", features)
+
     return [mk(g, True) for g in ups], [mk(g, False) for g in downs]
 
 
@@ -234,8 +258,10 @@ def summarize(band: str, p: float, raising: list[Reason], lowering: list[Reason]
         if not raising:
             return f"Low risk ({p:.1%}): nothing in this transaction stands out from the card's normal behaviour."
         if lowering:
-            return (f"Low risk ({p:.1%}). The strongest risk signal is {_lc(raising[0].text)}, but it is "
-                    f"outweighed by: {_lc(lowering[0].text)}.")
+            return (
+                f"Low risk ({p:.1%}). The strongest risk signal is {_lc(raising[0].text)}, but it is "
+                f"outweighed by: {_lc(lowering[0].text)}."
+            )
         return f"Low risk ({p:.1%}). The strongest risk signal, {_lc(raising[0].text)}, is weak on its own."
     if not raising:
         return f"{band} risk ({p:.1%}) with no single dominant signal."
@@ -244,8 +270,9 @@ def summarize(band: str, p: float, raising: list[Reason], lowering: list[Reason]
     return f"{band} risk ({p:.1%}) mainly because {main}{more}."
 
 
-def explain_frame(fm: FraudModel, feat: pd.DataFrame, threshold: float | None = None,
-                  top_raising: int = 4, top_lowering: int = 2) -> list[Explanation]:
+def explain_frame(
+    fm: FraudModel, feat: pd.DataFrame, threshold: float | None = None, top_raising: int = 4, top_lowering: int = 2
+) -> list[Explanation]:
     """Explain every row of a feature frame (output of build_features / test_scored)."""
     X = fm.prepare(feat)
     p_raw = fm.predict_raw(X)
@@ -255,17 +282,37 @@ def explain_frame(fm: FraudModel, feat: pd.DataFrame, threshold: float | None = 
     out = []
     rows = feat.assign(merchant_te=X["merchant_te"].to_numpy())
     for i in range(len(X)):
-        contrib = dict(zip(FEATURES, sv[i].tolist()))
+        contrib = dict(zip(FEATURES, sv[i].tolist(), strict=True))
         row = rows.iloc[i]
         up, down = build_reasons(contrib, row, fm, top_raising, top_lowering)
-        out.append(Explanation(probability=float(p[i]), raw_probability=float(p_raw[i]), band=str(bands[i]),
-                               action=ACTIONS[str(bands[i])], summary=summarize(str(bands[i]), float(p[i]), up, down),
-                               raising=up, lowering=down, base_value=base, contributions=contrib))
+        out.append(
+            Explanation(
+                probability=float(p[i]),
+                raw_probability=float(p_raw[i]),
+                band=str(bands[i]),
+                action=ACTIONS[str(bands[i])],
+                summary=summarize(str(bands[i]), float(p[i]), up, down),
+                raising=up,
+                lowering=down,
+                base_value=base,
+                contributions=contrib,
+            )
+        )
     return out
 
 
-def whatif(fm: FraudModel, raw_row: pd.Series, history: pd.DataFrame, amount: float | None = None,
-           hour: int | None = None, distance_km: float | None = None, threshold: float | None = None) -> Explanation:
+def whatif(
+    fm: FraudModel,
+    raw_row: pd.Series,
+    history: pd.DataFrame,
+    *,
+    amount: float | None = None,
+    hour: int | None = None,
+    distance_km: float | None = None,
+    threshold: float | None = None,
+    top_raising: int = 4,
+    top_lowering: int = 2,
+) -> Explanation:
     """Re-score one transaction with an edited amount, hour of day and/or distance from home.
 
     ``history`` should contain the card's transactions strictly before the ORIGINAL transaction time.
@@ -289,7 +336,7 @@ def whatif(fm: FraudModel, raw_row: pd.Series, history: pd.DataFrame, amount: fl
     new["dob"] = pd.to_datetime(new["dob"])
     hist = history[history["trans_date_trans_time"] < new["trans_date_trans_time"].iloc[0]]
     feat = featurize_with_history(new, hist)
-    return explain_frame(fm, feat, threshold)[0]
+    return explain_frame(fm, feat, threshold, top_raising, top_lowering)[0]
 
 
 def destination(lat: float, lon: float, bearing_deg: float, dist_km: float) -> tuple[float, float]:

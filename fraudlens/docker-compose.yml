@@ -1,0 +1,30 @@
+# docker compose up --build        (train on the host first so ./artifacts contains a model)
+# App: http://localhost:8501  (first visit creates the admin account)
+# API: http://localhost:8000/docs
+services:
+  api:
+    build: .
+    env_file: [.env]
+    ports: ["127.0.0.1:8000:8000"]
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+      - fraudlens-data:/app/data
+    restart: unless-stopped
+
+  app:
+    build: .
+    command: ["streamlit", "run", "app/streamlit_app.py", "--server.address", "0.0.0.0", "--server.port", "8501"]
+    env_file: [.env]
+    ports: ["127.0.0.1:8501:8501"]
+    volumes:
+      - ./artifacts:/app/artifacts:ro
+      - fraudlens-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  fraudlens-data:

@@ -5,6 +5,7 @@ transactions of the same card (strictly earlier in the per-card order). Rows are
 ordered by (cc_num, time, original position) so ties are resolved
 deterministically and a row never sees a row that comes after it.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -15,22 +16,43 @@ IMPOSSIBLE_SPEED_KMH = 800.0  # faster than a commercial flight
 
 CATEGORICAL = ["category", "gender"]
 NUMERIC = [
-    "amt", "log_amt", "hour", "day_of_week", "is_night",
-    "dist_home_km", "age", "log_city_pop", "merchant_te",
-    "n_txn_1h", "n_txn_24h", "amt_sum_24h", "amt_to_card_mean", "amt_to_cat_mean",
-    "hours_since_prev", "geo_speed_kmh", "impossible_travel",
-    "first_time_category", "card_txn_count",
+    "amt",
+    "log_amt",
+    "hour",
+    "day_of_week",
+    "is_night",
+    "dist_home_km",
+    "age",
+    "log_city_pop",
+    "merchant_te",
+    "n_txn_1h",
+    "n_txn_24h",
+    "amt_sum_24h",
+    "amt_to_card_mean",
+    "amt_to_cat_mean",
+    "hours_since_prev",
+    "geo_speed_kmh",
+    "impossible_travel",
+    "first_time_category",
+    "n_txn_30d",
 ]
 FEATURES = NUMERIC + CATEGORICAL
 
 # Context columns carried alongside features (used by explanations and the UI, not by the model).
-CONTEXT = ["prev_city_km", "minutes_since_prev", "card_mean_amt", "cat_mean_amt"]
+# card_txn_count is context only: a lifetime counter only ever grows, so it drifts out of the training range
+# (PSI > 3 every month on the test period). n_txn_30d carries the "established card" signal and is stationary.
+CONTEXT = ["prev_city_km", "minutes_since_prev", "card_mean_amt", "cat_mean_amt", "card_txn_count"]
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
     lat1, lon1, lat2, lon2 = (np.radians(np.asarray(x, dtype="float64")) for x in (lat1, lon1, lat2, lon2))
     a = np.sin((lat2 - lat1) / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin((lon2 - lon1) / 2) ** 2
     return 6371.0088 * 2 * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
+
+
+def _finite(a) -> np.ndarray:
+    a = np.asarray(a, dtype="float64")
+    return np.where(np.isfinite(a), a, np.nan)
 
 
 def _window_stats(times_ns: np.ndarray, amts: np.ndarray, window_ns: int):
@@ -69,16 +91,16 @@ def build_features(raw: pd.DataFrame) -> pd.DataFrame:
     prev_sum = g["amt"].cumsum() - df["amt"]
     with np.errstate(divide="ignore", invalid="ignore"):
         card_mean = np.where(df["card_txn_count"] > 0, prev_sum / df["card_txn_count"], np.nan)
+        df["amt_to_card_mean"] = _finite(amt / card_mean)  # an all-zero history would give inf
     df["card_mean_amt"] = card_mean
-    df["amt_to_card_mean"] = amt / card_mean
 
     gc = df.groupby(["cc_num", "category"], sort=False, observed=True)
     cat_count = gc.cumcount()
     cat_prev_sum = gc["amt"].cumsum() - df["amt"]
     with np.errstate(divide="ignore", invalid="ignore"):
         cat_mean = np.where(cat_count > 0, cat_prev_sum / cat_count, np.nan)
+        df["amt_to_cat_mean"] = _finite(amt / cat_mean)
     df["cat_mean_amt"] = cat_mean
-    df["amt_to_cat_mean"] = amt / cat_mean
     # first time this card buys in this category (only meaningful once the card has some history)
     df["first_time_category"] = (cat_count == 0).astype("int8")
 
@@ -101,14 +123,17 @@ def build_features(raw: pd.DataFrame) -> pd.DataFrame:
     cards = df["cc_num"].to_numpy()
     n1 = np.zeros(len(df), dtype="int32")
     n24 = np.zeros(len(df), dtype="int32")
+    n30d = np.zeros(len(df), dtype="int32")
     s24 = np.zeros(len(df), dtype="float64")
     bounds = np.flatnonzero(np.r_[True, cards[1:] != cards[:-1], True])
     hour_ns = 3_600 * 1_000_000_000
-    for a, b in zip(bounds[:-1], bounds[1:]):
+    for a, b in zip(bounds[:-1], bounds[1:], strict=True):
         n1[a:b], _ = _window_stats(times_ns[a:b], amt[a:b], hour_ns)
         n24[a:b], s24[a:b] = _window_stats(times_ns[a:b], amt[a:b], 24 * hour_ns)
+        n30d[a:b], _ = _window_stats(times_ns[a:b], amt[a:b], 30 * 24 * hour_ns)
     df["n_txn_1h"] = n1
     df["n_txn_24h"] = n24
+    df["n_txn_30d"] = n30d
     df["amt_sum_24h"] = s24
 
     df["category"] = df["category"].astype("string")

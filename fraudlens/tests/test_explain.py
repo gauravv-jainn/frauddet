@@ -1,11 +1,10 @@
 import numpy as np
-import pandas as pd
 import pytest
 from lightgbm import LGBMClassifier
 
 from conftest import make_toy
 from fraudkit.explain import GROUPS, MIN_CONTRIB, explain_frame, shap_matrix, whatif
-from fraudkit.features import CATEGORICAL, FEATURES, MerchantEncoder, build_features, model_frame
+from fraudkit.features import CATEGORICAL, MerchantEncoder, build_features, model_frame
 from fraudkit.score import Calibrator, FraudModel
 
 
@@ -21,12 +20,27 @@ def fitted():
     cats = {c: sorted(feat[c].unique().tolist()) for c in CATEGORICAL}
     X = model_frame(feat, cats)
     y = feat["is_fraud"].to_numpy()
-    m = LGBMClassifier(n_estimators=60, num_leaves=8, min_child_samples=5, random_state=0, verbose=-1,
-                       deterministic=True, force_col_wise=True).fit(X, y)
+    m = LGBMClassifier(
+        n_estimators=60,
+        num_leaves=8,
+        min_child_samples=5,
+        random_state=0,
+        verbose=-1,
+        deterministic=True,
+        force_col_wise=True,
+    ).fit(X, y)
     cal = Calibrator("platt").fit(m.predict_proba(X)[:, 1], y)
-    fm = FraudModel(model=m, calibrator=cal, encoder=enc, categories=cats, threshold=0.2,
-                    bands={"medium": None, "high": 0.5, "critical": 0.8}, review_cost=5.0,
-                    model_name="toy", data_source="toy")
+    fm = FraudModel(
+        model=m,
+        calibrator=cal,
+        encoder=enc,
+        categories=cats,
+        threshold=0.2,
+        bands={"medium": None, "high": 0.5, "critical": 0.8},
+        review_cost=5.0,
+        model_name="toy",
+        data_source="toy",
+    )
     return fm, raw, feat
 
 
@@ -84,6 +98,7 @@ def test_whatif_distance_sets_distance(fitted):
     # the reasons/feature use the edited distance
     from fraudkit.explain import destination
     from fraudkit.features import haversine_km
+
     lat, lon = destination(10.0, 20.0, 45.0, 1500.0)
     assert haversine_km(10.0, 20.0, lat, lon) == pytest.approx(1500.0, rel=1e-6)
     assert 0.0 <= e.probability <= 1.0
