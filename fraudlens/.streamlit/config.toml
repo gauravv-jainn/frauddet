@@ -9,6 +9,8 @@ font = "sans serif"
 [server]
 headless = true
 address = "localhost"
+maxUploadSize = 50          # MB; batch files are capped by rows in configs/default.yaml too
+enableXsrfProtection = true
 runOnSave = false
 
 [browser]
