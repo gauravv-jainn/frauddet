@@ -18,3 +18,9 @@ Locally: `python3 -m venv .venv && source .venv/bin/activate && pip install nump
 
 ## Limits
 One public dataset (two days of European card transactions, PCA-anonymised features). Educational demo, not for real transactions.
+
+## FraudLens (product version)
+[`fraudlens/`](fraudlens/) is a separate, local product built on the Kaggle simulated-transactions dataset: a leakage-free
+feature pipeline, Optuna-tuned LightGBM with calibrated probabilities and a money-aware threshold, plain-English SHAP reason
+codes, and a six-page Streamlit app (dashboard, transaction checker with what-if, batch scoring, analyst case queue, model
+report, training lab). See [fraudlens/README.md](fraudlens/README.md) for setup and real results.
