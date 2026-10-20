@@ -1,0 +1,23 @@
+# FraudLens configuration. All money values are in the dataset's currency (shown as EUR in the app).
+seed: 42
+data:
+  cache_dir: null          # folder with fraudTrain.csv/fraudTest.csv; null = download via kagglehub
+  validation_fraction: 0.15 # last 15% of the training period (by time) is validation
+features:
+  merchant_encoding: target # target-encode merchant on the training split only (smoothed)
+  te_smoothing: 50
+model:
+  optuna_trials: 30
+  cv_folds: 3
+  tuning_sample_negatives: 0.25 # fraction of genuine rows kept inside Optuna CV (all frauds kept) for speed
+costs:
+  review_cost: 5.0          # cost of an analyst reviewing one flagged transaction
+bands:                      # calibrated probability lower bounds
+  medium: 0.05
+  high: 0.30
+  critical: 0.70
+explain:
+  top_raising: 4
+  top_lowering: 2
+app:
+  case_db: data/cases.sqlite

@@ -1,0 +1,11 @@
+.venv/
+data/
+artifacts/*.joblib
+artifacts/*.parquet
+artifacts/run_status.json
+__pycache__/
+*.pyc
+*.sqlite
+.env
+kaggle.json
+.pytest_cache/
