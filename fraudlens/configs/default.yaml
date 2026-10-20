@@ -19,6 +19,14 @@ bands:                      # calibrated probability lower bounds
 explain:
   top_raising: 4
   top_lowering: 2
+rules:                       # policy guardrails on top of the model; they can only RAISE the risk band
+  enabled: true
+  review_amount: 2000        # every fraud in the training data is below ~1,400, so the model cannot judge larger ones
+  spend_spike_ratio: 20      # amount >= 20x the card's average ...
+  spend_spike_min_amount: 1500  # ... and at least 1,500 (above every fraud amount seen in training)
+  far_from_home_km: 500      # training data never exceeds ~150 km from home
+  burst_txn_1h: 5            # 5+ other transactions on the card in the last hour
+  out_of_range: true         # any key feature outside the range seen in training -> at least Medium
 app:
   db: data/fraudlens.sqlite   # users, API keys, cases, audit trail (env FRAUDLENS_DB overrides)
   session_timeout_minutes: 60

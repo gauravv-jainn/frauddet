@@ -90,30 +90,40 @@ df = clean(df).reset_index(drop=True)
 
 
 @st.cache_data(show_spinner="Scoring and explaining", max_entries=4)
-def score_batch(frame: pd.DataFrame, thr: float, model_version_key: str, top_raising: int, top_lowering: int):
+def score_batch(
+    frame: pd.DataFrame, thr: float, model_version_key: str, top_raising: int, top_lowering: int, policy: dict
+):
     """``model_version_key`` changes when the model file changes, so a retrain invalidates the cache."""
     hist = get_history()
     hist = hist[hist["cc_num"].isin(frame["cc_num"].unique()) & ~hist["trans_num"].isin(frame["trans_num"])]
     feat = featurize_with_history(frame, hist)
-    ex = explain_frame(fm, feat, thr, top_raising, top_lowering)
+    ex = explain_frame(fm, feat, thr, top_raising, top_lowering, policy)
     out = frame[["trans_num", "trans_date_trans_time", "cc_num", "amt", "category", "merchant"]].copy()
     out["risk"] = [e.probability for e in ex]
     out["band"] = [e.band for e in ex]
-    out["flagged"] = out["risk"] >= thr
+    out["model_band"] = [e.model_band for e in ex]
+    out["flagged"] = out["band"] != "Low"  # model flag (band >= Medium) OR any policy rule
+    out["policy_rules"] = [" | ".join(h.text for h in e.rules) for e in ex]
     out["top_reason"] = [e.one_line() for e in ex]
-    out["reasons"] = [[r.text for r in e.raising] for e in ex]
+    out["reasons"] = [[f"Policy: {h.text}" for h in e.rules] + [r.text for r in e.raising] for e in ex]
     out["action"] = [e.action for e in ex]
-    return out.sort_values("risk", ascending=False).reset_index(drop=True)
+    out["_rank"] = out["band"].map({"Critical": 3, "High": 2, "Medium": 1, "Low": 0})
+    return out.sort_values(["_rank", "risk"], ascending=False).drop(columns="_rank").reset_index(drop=True)
 
 
 res = score_batch(df, thr, model_key(), **explain_kw())
-c = st.columns(4)
+c = st.columns(5)
 c[0].metric("Rows scored", f"{len(res):,}")
 c[1].metric("Flagged", f"{int(res['flagged'].sum()):,}")
 c[2].metric("Amount flagged", f"€{res.loc[res['flagged'], 'amt'].sum():,.0f}")
 c[3].metric("Critical", f"{int((res['band'] == 'Critical').sum()):,}")
+c[4].metric(
+    "Raised by policy",
+    f"{int((res['band'] != res['model_band']).sum()):,}",
+    help="Rows whose band was raised by a policy rule (configs/default.yaml -> rules)",
+)
 
-show = res.drop(columns=["reasons"]).copy()
+show = res.drop(columns=["reasons", "policy_rules"]).copy()
 show["card"] = show["cc_num"].map(mask_card)
 show = show[["risk", "band", "top_reason", "amt", "category", "trans_date_trans_time", "card", "merchant", "action"]]
 st.dataframe(
@@ -122,7 +132,7 @@ st.dataframe(
     height=460,
     hide_index=True,
     column_config={
-        "risk": st.column_config.ProgressColumn("Risk", format="%.3f", min_value=0.0, max_value=1.0),
+        "risk": st.column_config.ProgressColumn("Model risk", format="%.3f", min_value=0.0, max_value=1.0),
         "trans_date_trans_time": st.column_config.DatetimeColumn("Time", format="YYYY-MM-DD HH:mm"),
         "amt": st.column_config.NumberColumn("Amount", format="%.2f"),
         "top_reason": st.column_config.TextColumn("Main reason", width="large"),

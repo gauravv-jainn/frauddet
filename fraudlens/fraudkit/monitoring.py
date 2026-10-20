@@ -60,7 +60,12 @@ def reference_profile(
         finite = v[np.isfinite(v)]
         qs = np.unique(np.quantile(finite, np.linspace(0, 1, n_bins + 1)[1:-1])) if len(finite) else np.array([])
         edges = qs.tolist()
-        prof["numeric"][c] = {"edges": edges, "shares": _numeric_shares(v, edges)}
+        prof["numeric"][c] = {
+            "edges": edges,
+            "shares": _numeric_shares(v, edges),
+            "min": float(finite.min()) if len(finite) else None,
+            "max": float(finite.max()) if len(finite) else None,
+        }
     for c in categorical:
         levels = sorted(X[c].astype("object").dropna().astype(str).unique().tolist())
         if X[c].isna().any():
@@ -69,6 +74,13 @@ def reference_profile(
     if scores is not None:
         prof["score"] = {"edges": SCORE_EDGES[1:-1], "shares": _numeric_shares(np.asarray(scores), SCORE_EDGES[1:-1])}
     return prof
+
+
+def training_ranges(profile: dict | None) -> dict:
+    """{feature: {"min", "max"}} seen in training, for the out-of-range policy rule."""
+    if not profile:
+        return {}
+    return {c: {"min": v["min"], "max": v["max"]} for c, v in profile["numeric"].items() if v.get("max") is not None}
 
 
 def drift_report(profile: dict, X: pd.DataFrame, scores=None) -> pd.DataFrame:

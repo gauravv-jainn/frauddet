@@ -64,6 +64,7 @@ div[data-testid="stMetricValue"] {font-size: 1.55rem; font-weight: 600;}
           margin-bottom: 8px; background: #FFFFFF;}
 .fl-card.raise {border-left-color: #B91C1C; background: #FEF2F2;}
 .fl-card.lower {border-left-color: #15803D; background: #F0FDF4;}
+.fl-card.rule {border-left-color: #7C3AED; background: #F5F3FF;}
 .fl-card .t {font-size: 0.95rem; color: #0F172A;}
 .fl-card .w {font-size: 0.75rem; color: #475569; margin-top: 2px;}
 .fl-chip {display: inline-block; padding: 3px 12px; border-radius: 999px; color: white; font-weight: 600;
@@ -87,10 +88,17 @@ def get_config() -> dict:
     return get_settings().model_dump()
 
 
+def policy() -> dict:
+    """Policy-rule settings + training ranges, passed to every explanation (see fraudkit/rules.py)."""
+    from fraudkit.monitoring import training_ranges
+
+    return {"rules": get_settings().rules.model_dump(), "ranges": training_ranges(get_reference_profile())}
+
+
 def explain_kw() -> dict:
-    """Number of reasons to show, from the config."""
+    """Number of reasons to show (config) and the policy rules."""
     e = get_settings().explain
-    return {"top_raising": e.top_raising, "top_lowering": e.top_lowering}
+    return {"top_raising": e.top_raising, "top_lowering": e.top_lowering, "policy": policy()}
 
 
 @st.cache_resource
@@ -446,6 +454,16 @@ def money_short(x: float) -> str:
 def band_chip(band: str) -> str:
     color = BAND_COLORS.get(band, SLATE)
     return f"<span class='fl-chip' style='background:{color}'>{html.escape(str(band))}</span>"
+
+
+def rule_cards(rules) -> str:
+    out = []
+    for r in rules:
+        out.append(
+            f"<div class='fl-card rule'><div class='t'><b>Policy rule</b> &middot; {html.escape(r.text)}</div>"
+            f"<div class='w'>raises the band to at least {html.escape(r.band)}</div></div>"
+        )
+    return "".join(out)
 
 
 def reason_cards(reasons, kind: str) -> str:

@@ -55,6 +55,18 @@ class ExplainCfg(_Strict):
     top_lowering: int = Field(2, ge=0, le=10)
 
 
+class RulesCfg(_Strict):
+    """Policy guardrails on top of the model. Rules can only raise the risk band."""
+
+    enabled: bool = True
+    review_amount: float = Field(2000.0, gt=0)  # every fraud in the training data is below ~€1,400
+    spend_spike_ratio: float = Field(20.0, gt=1)
+    spend_spike_min_amount: float = Field(1500.0, ge=0)
+    far_from_home_km: float = Field(500.0, gt=0)  # training data never exceeds ~150 km
+    burst_txn_1h: int = Field(5, ge=2)
+    out_of_range: bool = True
+
+
 class AppCfg(_Strict):
     db: str = "data/fraudlens.sqlite"
     session_timeout_minutes: int = Field(60, ge=5, le=24 * 60)
@@ -76,6 +88,7 @@ class Settings(_Strict):
     costs: CostsCfg = CostsCfg()
     bands: BandsCfg = BandsCfg()
     explain: ExplainCfg = ExplainCfg()
+    rules: RulesCfg = RulesCfg()
     app: AppCfg = AppCfg()
     api: ApiCfg = ApiCfg()
 

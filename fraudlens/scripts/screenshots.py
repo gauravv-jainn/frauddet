@@ -99,6 +99,17 @@ def main():
             settle(page)
             shot(page, "2b_what_if")
 
+            # the case a model alone gets wrong: huge amount, far from home -> policy rules escalate it
+            page.get_by_text("Enter a transaction", exact=True).click()
+            settle(page)
+            page.get_by_label("Amount (€)").fill("12000")
+            page.get_by_label("Merchant distance from cardholder's home (km)").fill("2500")
+            page.get_by_role("button", name="Score transaction").click()
+            settle(page, 3000)
+            shot(page, "2c_policy_rules")
+            page.get_by_text("Pick a real test transaction", exact=True).click()
+            settle(page)
+
             goto(page, "Batch scoring")
             page.get_by_role("button", name="Or score the 500-row sample file").click()
             settle(page, 4000)

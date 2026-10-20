@@ -8,7 +8,19 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from common import BLUE, RAISE, get_metrics, money, money_short, page_setup, require_artifacts, sidebar_controls
+from common import (
+    BLUE,
+    RAISE,
+    get_metrics,
+    get_scored,
+    money,
+    money_short,
+    page_setup,
+    policy,
+    require_artifacts,
+    sidebar_controls,
+)
+from fraudkit.rules import policy_impact
 
 page_setup(
     "Model report", "Everything on this page is read from artifacts/metrics.json, written by the last training run."
@@ -139,6 +151,31 @@ with right:
         f"Review cost {money(m['threshold']['review_cost'], 2)}. The sidebar review cost does not move this "
         "curve; it is the training-time choice."
     )
+
+st.subheader("Policy rules on top of the model (test period)")
+pol = policy()
+summary, per_rule = policy_impact(get_scored(), at["threshold"], at["review_cost"], pol["rules"], pol["ranges"])
+st.dataframe(
+    summary,
+    hide_index=True,
+    width="stretch",
+    column_config={
+        "precision": st.column_config.NumberColumn(format="%.3f"),
+        "recall": st.column_config.NumberColumn(format="%.4f"),
+        "false_alarms_per_10k_genuine": st.column_config.NumberColumn("false alarms /10k", format="%.1f"),
+        "missed_amount": st.column_config.NumberColumn(format="%.0f"),
+        "review_cost_total": st.column_config.NumberColumn(format="%.0f"),
+        "total_cost": st.column_config.NumberColumn(format="%.0f"),
+        "saved_vs_no_model": st.column_config.NumberColumn(format="%.0f"),
+    },
+)
+st.dataframe(per_rule, hide_index=True, width="stretch")
+st.caption(
+    "Rules are business policy, not learned: they catch transactions the simulator never produced as fraud "
+    "(e.g. very large amounts, merchants thousands of km away), where the model has no evidence. On this simulated "
+    "test set they mostly add reviews; their value is protection outside the training distribution. Thresholds live "
+    "in configs/default.yaml -> rules."
+)
 
 st.subheader("What drives the model (global SHAP)")
 imp = pd.Series(m["global_importance"]["mean_abs_shap"]).sort_values()

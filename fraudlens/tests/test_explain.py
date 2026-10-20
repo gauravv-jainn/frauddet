@@ -1,47 +1,7 @@
 import numpy as np
 import pytest
-from lightgbm import LGBMClassifier
 
-from conftest import make_toy
 from fraudkit.explain import GROUPS, MIN_CONTRIB, explain_frame, shap_matrix, whatif
-from fraudkit.features import CATEGORICAL, MerchantEncoder, build_features, model_frame
-from fraudkit.score import Calibrator, FraudModel
-
-
-@pytest.fixture(scope="module")
-def fitted():
-    raw = make_toy(n_cards=30, n_per_card=60, seed=3)
-    # make fraud learnable: large night-time amounts
-    hour = raw["trans_date_trans_time"].dt.hour
-    raw["is_fraud"] = ((raw["amt"] > 80) & hour.isin([22, 23, 0, 1, 2, 3])).astype(int)
-    feat = build_features(raw)
-    enc = MerchantEncoder(smoothing=10)
-    feat["merchant_te"] = enc.fit_transform_oof(feat["merchant"], feat["is_fraud"])
-    cats = {c: sorted(feat[c].unique().tolist()) for c in CATEGORICAL}
-    X = model_frame(feat, cats)
-    y = feat["is_fraud"].to_numpy()
-    m = LGBMClassifier(
-        n_estimators=60,
-        num_leaves=8,
-        min_child_samples=5,
-        random_state=0,
-        verbose=-1,
-        deterministic=True,
-        force_col_wise=True,
-    ).fit(X, y)
-    cal = Calibrator("platt").fit(m.predict_proba(X)[:, 1], y)
-    fm = FraudModel(
-        model=m,
-        calibrator=cal,
-        encoder=enc,
-        categories=cats,
-        threshold=0.2,
-        bands={"medium": None, "high": 0.5, "critical": 0.8},
-        review_cost=5.0,
-        model_name="toy",
-        data_source="toy",
-    )
-    return fm, raw, feat
 
 
 def test_shap_reconstructs_model_output(fitted):

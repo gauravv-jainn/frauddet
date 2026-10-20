@@ -19,12 +19,14 @@ from common import (
     get_scored,
     money,
     page_setup,
+    policy,
     require_artifacts,
     sidebar_controls,
     username,
 )
 from fraudkit.cases import ACTION_TO_STATUS, STATUSES
 from fraudkit.explain import explain_frame
+from fraudkit.rules import policy_flags
 from fraudkit.security import esc, sanitize_csv_frame
 
 page_setup(
@@ -36,6 +38,7 @@ fm, scored, store = get_model(), get_scored(), get_case_store()
 version = get_metrics()["run"].get("model_version")
 me = username()
 stream = scored.sort_values("trans_date_trans_time", kind="mergesort").reset_index(drop=True)
+pol = policy()
 
 
 def enqueue(rows: pd.DataFrame, source: str) -> int:
@@ -52,7 +55,7 @@ def enqueue(rows: pd.DataFrame, source: str) -> int:
             merchant=r.merchant,
             score=e.probability,
             band=e.band,
-            reasons=[x.text for x in e.raising],
+            reasons=[f"Policy: {h.text}" for h in e.rules] + [x.text for x in e.raising],
             source=source,
             actor=me,
             model_version=version,
@@ -76,7 +79,8 @@ if allowed("feed_queue"):
             step = 250
             for start in range(cursor, min(cursor + n_stream, len(stream)), step):
                 chunk = stream.iloc[start : start + step]
-                hits = chunk[chunk["p"] >= thr]
+                flags, _ = policy_flags(chunk, chunk["p"].to_numpy(), thr, pol["rules"], pol["ranges"])
+                hits = chunk[flags]
                 flagged += len(hits)
                 added += enqueue(hits, "demo")
                 done = start + len(chunk) - cursor

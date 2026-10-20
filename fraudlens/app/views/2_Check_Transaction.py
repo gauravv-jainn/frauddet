@@ -19,6 +19,7 @@ from common import (
     money,
     page_setup,
     reason_cards,
+    rule_cards,
     require_artifacts,
     sidebar_controls,
 )
@@ -39,10 +40,16 @@ def show(e, truth: int | None = None, key: str = "main"):
         st.plotly_chart(gauge(e.probability, thr, bounds), width="stretch", key=f"gauge_{key}")
     with c2:
         st.markdown(
-            f"{band_chip(e.band)} &nbsp; <b>{e.probability:.2%}</b> calibrated probability "
+            f"{band_chip(e.band)} &nbsp; <b>{e.probability:.2%}</b> calibrated model probability "
             f"<span class='fl-muted'>(flag threshold {thr:.2%})</span>",
             unsafe_allow_html=True,
         )
+        if e.escalated:
+            st.markdown(
+                f"<div class='fl-muted' style='margin-top:6px'>Model alone: {band_chip(e.model_band)} &rarr; "
+                f"raised to {band_chip(e.band)} by {len(e.rules)} policy rule(s)</div>",
+                unsafe_allow_html=True,
+            )
         st.markdown(f"<p style='margin-top:10px'>{esc(e.summary)}</p>", unsafe_allow_html=True)
         st.markdown(f"<div class='fl-action'><b>Recommended action:</b> {esc(e.action)}</div>", unsafe_allow_html=True)
         if truth is not None:
@@ -51,12 +58,15 @@ def show(e, truth: int | None = None, key: str = "main"):
                 f"<b>{'fraud' if truth else 'genuine'}</b></p>",
                 unsafe_allow_html=True,
             )
+    if e.rules:
+        st.markdown("**Policy rules triggered**")
+        st.markdown(rule_cards(e.rules), unsafe_allow_html=True)
     r1, r2 = st.columns(2)
     with r1:
-        st.markdown("**Raises the risk**")
+        st.markdown("**Raises the risk (model)**")
         st.markdown(reason_cards(e.raising, "raise"), unsafe_allow_html=True)
     with r2:
-        st.markdown("**Lowers the risk**")
+        st.markdown("**Lowers the risk (model)**")
         st.markdown(reason_cards(e.lowering, "lower"), unsafe_allow_html=True)
 
 
@@ -111,7 +121,7 @@ if mode == "Pick a real test transaction":
     )
     with st.form("whatif"):
         w1, w2, w3 = st.columns(3)
-        amount = w1.number_input("Amount (€)", min_value=0.0, max_value=50000.0, value=float(r.amt), step=10.0)
+        amount = w1.number_input("Amount (€)", min_value=0.0, max_value=10_000_000.0, value=float(r.amt), step=10.0)
         hour = w2.slider("Hour of day", 0, 23, int(r.trans_date_trans_time.hour))
         dist = w3.slider("Merchant distance from home (km)", 0, 3000, int(round(r.dist_home_km)))
         go_btn = st.form_submit_button("Re-score", type="primary")
@@ -152,7 +162,7 @@ else:
         d = a2.date_input("Date", value=date(2020, 12, 15), min_value=date(2020, 6, 22), max_value=date(2021, 12, 31))
         t = a3.time_input("Time", value=time(14, 30), step=60)
         b1, b2, b3 = st.columns(3)
-        amount = b1.number_input("Amount (€)", min_value=0.0, max_value=50000.0, value=120.0, step=5.0)
+        amount = b1.number_input("Amount (€)", min_value=0.0, max_value=10_000_000.0, value=120.0, step=5.0)
         category = b2.selectbox("Category", fm.categories["category"])
         merchants = sorted(fm.encoder.mapping_)
         merchant = b3.selectbox("Merchant", merchants, index=0)

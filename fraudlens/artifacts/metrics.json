@@ -1,6 +1,6 @@
 {
   "run": {
-    "started_at": "2026-10-20T15:39:28+00:00",
+    "started_at": "2026-10-20T17:06:17+00:00",
     "fast": false,
     "trials": 30,
     "sample_cards": null,
@@ -32,6 +32,15 @@
         "top_raising": 4,
         "top_lowering": 2
       },
+      "rules": {
+        "enabled": true,
+        "review_amount": 2000.0,
+        "spend_spike_ratio": 20.0,
+        "spend_spike_min_amount": 1500.0,
+        "far_from_home_km": 500.0,
+        "burst_txn_1h": 5,
+        "out_of_range": true
+      },
       "app": {
         "db": "data/fraudlens.sqlite",
         "session_timeout_minutes": 60,
@@ -44,9 +53,9 @@
         "rate_limit_per_minute": 120
       }
     },
-    "model_version": "20261020-154750-a6506be0",
-    "finished_at": "2026-10-20T15:47:50+00:00",
-    "total_seconds": 502.0
+    "model_version": "20261020-172652-a6506be0",
+    "finished_at": "2026-10-20T17:26:52+00:00",
+    "total_seconds": 1235.3
   },
   "data": {
     "source": "Kaggle kartik2112/fraud-detection (Sparkov simulated card transactions)",
@@ -113,16 +122,16 @@
       "pr_auc": 0.9844467087178023,
       "roc_auc": 0.9997641713938243,
       "brier": 0.0006344028482195568,
-      "fit_seconds": 5.5,
+      "fit_seconds": 67.36,
       "cv_pr_auc": 0.9842157838453817,
       "selected": true
     },
     {
       "model": "Random forest",
       "pr_auc": 0.9549478884899715,
-      "roc_auc": 0.9974200509325339,
-      "brier": 0.0010544100879344514,
-      "fit_seconds": 20.53,
+      "roc_auc": 0.9974200486503363,
+      "brier": 0.0010544100879344516,
+      "fit_seconds": 23.25,
       "selected": false
     },
     {
@@ -130,7 +139,7 @@
       "pr_auc": 0.8027147814516247,
       "roc_auc": 0.9555690817856864,
       "brier": 0.0016166953786624682,
-      "fit_seconds": 1.75,
+      "fit_seconds": 2.21,
       "selected": false
     },
     {
@@ -138,7 +147,7 @@
       "pr_auc": 0.7437618400393731,
       "roc_auc": 0.9671827197731064,
       "brier": 0.0024679758520307054,
-      "fit_seconds": 4.36,
+      "fit_seconds": 4.04,
       "selected": false
     }
   ],
@@ -1624,13 +1633,13 @@
     "gender"
   ],
   "durations_s": {
-    "load": 7.11,
-    "features": 2.43,
-    "split": 2.62,
-    "baseline": 26.9,
-    "tuning": 446.69,
-    "calibration": 0.85,
-    "threshold": 0.01,
-    "test": 13.7
+    "load": 7.06,
+    "features": 2.68,
+    "split": 2.52,
+    "baseline": 29.78,
+    "tuning": 1135.62,
+    "calibration": 9.33,
+    "threshold": 0.12,
+    "test": 42.87
   }
 }

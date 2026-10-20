@@ -14,6 +14,8 @@ import numpy as np
 import pandas as pd
 
 from .features import FEATURES, haversine_km
+from .rules import combine_band
+from .rules import describe as describe_rules
 from .score import ACTIONS, FraudModel
 
 MIN_CONTRIB = 0.05  # log-odds; smaller contributions are not worth a sentence
@@ -61,11 +63,19 @@ class Explanation:
     lowering: list[Reason]
     base_value: float
     contributions: dict  # feature -> SHAP (log-odds)
+    model_band: str = ""  # band from the model alone; ``band`` is after policy rules
+    rules: list = field(default_factory=list)  # RuleHit list (policy guardrails that fired)
 
     def to_dict(self):
         return asdict(self)
 
+    @property
+    def escalated(self) -> bool:
+        return bool(self.rules) and self.band != self.model_band
+
     def one_line(self) -> str:
+        if self.rules:
+            return "Policy: " + self.rules[0].text
         return self.raising[0].text if self.raising else "No strong risk signals"
 
 
@@ -271,9 +281,18 @@ def summarize(band: str, p: float, raising: list[Reason], lowering: list[Reason]
 
 
 def explain_frame(
-    fm: FraudModel, feat: pd.DataFrame, threshold: float | None = None, top_raising: int = 4, top_lowering: int = 2
+    fm: FraudModel,
+    feat: pd.DataFrame,
+    threshold: float | None = None,
+    top_raising: int = 4,
+    top_lowering: int = 2,
+    policy: dict | None = None,
 ) -> list[Explanation]:
-    """Explain every row of a feature frame (output of build_features / test_scored)."""
+    """Explain every row of a feature frame (output of build_features / test_scored).
+
+    ``policy`` = {"rules": rules config dict, "ranges": training ranges}; when given, policy rules can raise
+    the band (see fraudkit/rules.py). Without it the result is the model alone.
+    """
     X = fm.prepare(feat)
     p_raw = fm.predict_raw(X)
     p = fm.calibrator.transform(p_raw)
@@ -285,17 +304,36 @@ def explain_frame(
         contrib = dict(zip(FEATURES, sv[i].tolist(), strict=True))
         row = rows.iloc[i]
         up, down = build_reasons(contrib, row, fm, top_raising, top_lowering)
+        model_band = str(bands[i])
+        hits = describe_rules(row, policy["rules"], policy.get("ranges")) if policy else []
+        final = model_band
+        for h in hits:
+            final = combine_band(final, h.band)
+        summary = summarize(model_band, float(p[i]), up, down)
+        if final != model_band:
+            more = f" ({len(hits) - 1} more rule{'s' if len(hits) > 2 else ''} fired)" if len(hits) > 1 else ""
+            summary = (
+                f"{final} risk by policy rule: {_lc(hits[0].text)}{more}. The model alone scores it "
+                f"{float(p[i]):.1%} ({model_band})"
+                + (
+                    ", but this transaction is outside its training data."
+                    if any(h.rule == "out_of_range" for h in hits)
+                    else "."
+                )
+            )
         out.append(
             Explanation(
                 probability=float(p[i]),
                 raw_probability=float(p_raw[i]),
-                band=str(bands[i]),
-                action=ACTIONS[str(bands[i])],
-                summary=summarize(str(bands[i]), float(p[i]), up, down),
+                band=final,
+                action=ACTIONS[final],
+                summary=summary,
                 raising=up,
                 lowering=down,
                 base_value=base,
                 contributions=contrib,
+                model_band=model_band,
+                rules=hits,
             )
         )
     return out
@@ -312,6 +350,7 @@ def whatif(
     threshold: float | None = None,
     top_raising: int = 4,
     top_lowering: int = 2,
+    policy: dict | None = None,
 ) -> Explanation:
     """Re-score one transaction with an edited amount, hour of day and/or distance from home.
 
@@ -336,7 +375,7 @@ def whatif(
     new["dob"] = pd.to_datetime(new["dob"])
     hist = history[history["trans_date_trans_time"] < new["trans_date_trans_time"].iloc[0]]
     feat = featurize_with_history(new, hist)
-    return explain_frame(fm, feat, threshold, top_raising, top_lowering)[0]
+    return explain_frame(fm, feat, threshold, top_raising, top_lowering, policy)[0]
 
 
 def destination(lat: float, lon: float, bearing_deg: float, dist_km: float) -> tuple[float, float]:

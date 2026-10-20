@@ -12,6 +12,10 @@ keys and retraining, and everyone can watch data drift and model performance.
 Everything runs locally (training included) on a normal CPU. Every number in this README and in the app comes from
 `artifacts/metrics.json`, written by an actual training run.
 
+**Viva report (PDF):** [docs/FraudLens_Viva_Report.pdf](docs/FraudLens_Viva_Report.pdf) covers the algorithms used, where
+they are used, how the models are compared, all results, and viva questions with answers. It is generated from the
+training artifacts by `scripts/build_report.py`.
+
 ![Check a transaction](docs/screenshots/2_check_transaction.png)
 
 ## What it does
@@ -162,6 +166,26 @@ step is appended to `artifacts/training_log.jsonl`. Everything is seeded and Lig
 6. **What-if** re-scores the same transaction with a different amount, hour or merchant distance, recomputing the
    history features against the card's real past.
 
+## Policy rules (guardrail for model blind spots)
+
+A model only learns what is in its data. In this simulated dataset every fraud is at most about €1,400 and every
+merchant is within about 150 km of home. A €12,000 purchase 2,500 km away therefore scores 0.0% with the model alone.
+FraudLens adds configurable policy rules (`configs/default.yaml -> rules`, `fraudkit/rules.py`):
+- large amount, extreme spending spike, far from home, long-distance impossible travel, transaction burst;
+- any key feature outside the range seen in training.
+
+Rules can only raise the risk band, never lower it. Each hit is shown as its own reason, and the app and API report
+both the model band and the final band.
+
+![Policy rules](docs/screenshots/2c_policy_rules.png)
+
+The rules were measured on the test set like everything else; the impact table is in the Model report and in the PDF.
+On this simulated data they add about 600 reviews and catch no extra fraud, because the simulator never produces fraud
+of that kind. That is the price of protection outside the training data. Two looser rule versions were rejected after
+measuring them:
+- a plain impossible-travel flag fired 15,074 times for 1 extra fraud;
+- a 10x spending-spike rule added 2,398 reviews for 10 frauds.
+
 ## Monitoring
 
 Training saves a reference profile: decile bin edges and shares of every feature on the fit period, plus the score
@@ -193,10 +217,10 @@ See [SECURITY.md](SECURITY.md) for the full list and for what is still needed be
 
 | Model | PR-AUC | ROC-AUC | Brier | Fit time (s) |
 |---|---|---|---|---|
-| **LightGBM tuned (Optuna)** (selected) | 0.9844 | 0.9998 | 0.00063 | 5.5 |
-| Random forest | 0.9549 | 0.9974 | 0.00105 | 20.5 |
-| LightGBM default | 0.8027 | 0.9556 | 0.00162 | 1.8 |
-| Logistic regression | 0.7438 | 0.9672 | 0.00247 | 4.4 |
+| **LightGBM tuned (Optuna)** (selected) | 0.9844 | 0.9998 | 0.00063 | 67.4 |
+| Random forest | 0.9549 | 0.9974 | 0.00105 | 23.2 |
+| LightGBM default | 0.8027 | 0.9556 | 0.00162 | 2.2 |
+| Logistic regression | 0.7438 | 0.9672 | 0.00247 | 4.0 |
 
 Optuna: 30 trials, 3-fold stratified CV, best CV PR-AUC 0.9842.
 
@@ -216,7 +240,7 @@ Optuna: 30 trials, 3-fold stratified CV, best CV PR-AUC 0.9842.
 | Cost with model (missed fraud + reviews) | 15,994 + 12,740 = 28,734 |
 | **Saved vs no model** | **1,104,591** |
 
-Full training run: 502 s on 32 CPU threads (Windows-10-10.0.26200-SP0).
+Full training run: 1235 s on 32 CPU threads (Windows-10-10.0.26200-SP0).
 <!-- RESULTS:END -->
 
 ## Screenshots

@@ -43,6 +43,7 @@ from fraudkit.data import clean, validate_schema
 from fraudkit.db import Database
 from fraudkit.explain import explain_frame
 from fraudkit.features import featurize_with_history
+from fraudkit.monitoring import training_ranges
 from fraudkit.score import ARTIFACTS, FraudModel, load_metrics, load_serving_model
 
 log = logging.getLogger("fraudlens.api")
@@ -89,11 +90,13 @@ class ReasonOut(BaseModel):
 
 class ScoreOut(BaseModel):
     trans_num: str | None
-    probability: float
-    band: str
+    probability: float = Field(description="Calibrated model probability")
+    band: str = Field(description="Final band after policy rules")
+    model_band: str = Field(description="Band from the model alone")
     flagged: bool
     action: str
     summary: str
+    policy_rules: list[str] = Field(default_factory=list, description="Policy guardrails that fired")
     reasons: list[ReasonOut]
 
 
@@ -127,7 +130,14 @@ def model() -> FraudModel:
         if _model_cache.get("mtime") != mtime:
             _model_cache.update(model=load_serving_model(path, bands=settings().bands.model_dump()), mtime=mtime)
             history.cache_clear()
+            training_range_limits.cache_clear()
         return _model_cache["model"]
+
+
+@lru_cache(maxsize=1)
+def training_range_limits() -> dict:
+    p = ARTIFACTS / "reference_profile.json"
+    return training_ranges(json.loads(p.read_text(encoding="utf-8"))) if p.exists() else {}
 
 
 @lru_cache(maxsize=1)
@@ -269,16 +279,21 @@ def score(req: ScoreRequest, request: Request, client: str = Depends(authenticat
         hist = hist[hist["cc_num"].isin(df["cc_num"].unique()) & ~hist["trans_num"].isin(df["trans_num"])]
     feat = featurize_with_history(df, hist)
     e_cfg = settings().explain
+    pol = {"rules": settings().rules.model_dump(), "ranges": training_range_limits()}
     results = []
     for tn, e in zip(
-        df["trans_num"], explain_frame(fm, feat, None, e_cfg.top_raising, e_cfg.top_lowering), strict=True
+        df["trans_num"],
+        explain_frame(fm, feat, None, e_cfg.top_raising, e_cfg.top_lowering, pol),
+        strict=True,
     ):
         results.append(
             ScoreOut(
                 trans_num=tn,
                 probability=e.probability,
                 band=e.band,
-                flagged=e.probability >= fm.threshold,
+                model_band=e.model_band,
+                flagged=e.band != "Low",
+                policy_rules=[h.text for h in e.rules],
                 action=e.action,
                 summary=e.summary,
                 reasons=[
