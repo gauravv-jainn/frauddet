@@ -6,6 +6,11 @@ secondaryBackgroundColor = "#F3F5F9"
 textColor = "#0F172A"
 font = "sans serif"
 
+[theme.sidebar]
+backgroundColor = "#0B1220"
+secondaryBackgroundColor = "#16213A"
+textColor = "#E2E8F0"
+
 [server]
 headless = true
 address = "localhost"

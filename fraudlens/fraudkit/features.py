@@ -41,7 +41,19 @@ FEATURES = NUMERIC + CATEGORICAL
 # Context columns carried alongside features (used by explanations and the UI, not by the model).
 # card_txn_count is context only: a lifetime counter only ever grows, so it drifts out of the training range
 # (PSI > 3 every month on the test period). n_txn_30d carries the "established card" signal and is stationary.
-CONTEXT = ["prev_city_km", "minutes_since_prev", "card_mean_amt", "cat_mean_amt", "card_txn_count"]
+# card_max_amt / amt_to_card_max / cat_share / hour_share were tested as model features: none improved validation
+# PR-AUC beyond seed noise (+-0.0005), so they stay context only (explanations, policy rules, card 360 view).
+CONTEXT = [
+    "prev_city_km",
+    "minutes_since_prev",
+    "card_mean_amt",
+    "cat_mean_amt",
+    "card_txn_count",
+    "card_max_amt",
+    "amt_to_card_max",
+    "cat_share",
+    "hour_share",
+]
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
@@ -131,6 +143,30 @@ def build_features(raw: pd.DataFrame) -> pd.DataFrame:
         n1[a:b], _ = _window_stats(times_ns[a:b], amt[a:b], hour_ns)
         n24[a:b], s24[a:b] = _window_stats(times_ns[a:b], amt[a:b], 24 * hour_ns)
         n30d[a:b], _ = _window_stats(times_ns[a:b], amt[a:b], 30 * 24 * hour_ns)
+    # card profile: previous maximum spend, how usual this hour is for the card (share of earlier transactions
+    # within +-2 hours, circular) -- both from strictly earlier rows of the card
+    hours = df["hour"].to_numpy()
+    prev_max = np.full(len(df), np.nan)
+    hour_share = np.full(len(df), np.nan)
+    offsets = np.arange(-2, 3)
+    for a, b in zip(bounds[:-1], bounds[1:], strict=True):
+        seg = amt[a:b]
+        run_max = np.maximum.accumulate(seg)
+        prev_max[a + 1 : b] = run_max[:-1]
+        onehot = np.zeros((b - a, 24), dtype="int32")
+        onehot[np.arange(b - a), hours[a:b]] = 1
+        before = np.cumsum(onehot, axis=0) - onehot  # counts of earlier transactions per hour
+        cols = (hours[a:b, None] + offsets[None, :]) % 24
+        near = np.take_along_axis(before, cols, axis=1).sum(axis=1)
+        n_prev = np.arange(b - a)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            hour_share[a:b] = np.where(n_prev > 0, near / n_prev, np.nan)
+    df["card_max_amt"] = prev_max
+    with np.errstate(divide="ignore", invalid="ignore"):
+        df["amt_to_card_max"] = _finite(amt / prev_max)
+        df["cat_share"] = np.where(df["card_txn_count"] > 0, cat_count / df["card_txn_count"], np.nan)
+    df["hour_share"] = hour_share
+
     df["n_txn_1h"] = n1
     df["n_txn_24h"] = n24
     df["n_txn_30d"] = n30d

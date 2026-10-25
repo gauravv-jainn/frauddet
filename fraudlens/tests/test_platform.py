@@ -84,10 +84,14 @@ def test_migration_upgrades_old_case_database(tmp_path):
             "INSERT INTO cases (trans_num, status) VALUES ('t1', 'open');"
         )
     db = Database(path)
-    assert db.schema_version == 2
+    from fraudkit.db import MIGRATIONS
+
+    assert db.schema_version == len(MIGRATIONS)
     with db.tx() as c:
         cols = {r[1] for r in c.execute("PRAGMA table_info(cases)")}
-        assert {"assignee", "model_version"} <= cols
+        assert {"assignee", "model_version", "expected_loss", "decision", "card_ref"} <= cols
+        tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        assert {"watchlist", "case_comments", "users", "api_keys"} <= tables
         assert c.execute("SELECT COUNT(*) FROM cases").fetchone()[0] == 1  # data kept
 
 

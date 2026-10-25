@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 
 import yaml
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,16 +57,39 @@ class ExplainCfg(_Strict):
     top_lowering: int = Field(2, ge=0, le=10)
 
 
+Auto = Literal["auto"]
+
+
 class RulesCfg(_Strict):
-    """Policy guardrails on top of the model. Rules can only raise the risk band."""
+    """Policy guardrails on top of the model. Rules can only raise the risk band.
+
+    "auto" = the value derived at training time (artifacts/metrics.json -> rules_auto): amount and distance limits
+    from the training data, the spending-spike rule tuned on the validation period.
+    """
 
     enabled: bool = True
-    review_amount: float = Field(2000.0, gt=0)  # every fraud in the training data is below ~€1,400
-    spend_spike_ratio: float = Field(20.0, gt=1)
-    spend_spike_min_amount: float = Field(1500.0, ge=0)
-    far_from_home_km: float = Field(500.0, gt=0)  # training data never exceeds ~150 km
+    review_amount: float | Auto = "auto"
+    spend_spike_ratio: float | Auto = "auto"
+    spend_spike_min_amount: float | Auto = "auto"
+    far_from_home_km: float | Auto = "auto"
     burst_txn_1h: int = Field(5, ge=2)
     out_of_range: bool = True
+    block_confirmed_cards: bool = True  # an analyst-confirmed fraud blocks the card for later transactions
+
+    @model_validator(mode="after")
+    def _positive(self):
+        for name in ("review_amount", "spend_spike_ratio", "spend_spike_min_amount", "far_from_home_km"):
+            v = getattr(self, name)
+            if v != "auto" and v <= 0:
+                raise ValueError(f"rules.{name} must be positive or 'auto'")
+        return self
+
+
+class DecisionCfg(_Strict):
+    """How a calibrated probability becomes an action (see fraudkit/decision.py)."""
+
+    mode: Literal["auto", "expected_loss", "threshold"] = "auto"  # auto = cheaper policy on validation
+    sla_hours: float = Field(24.0, gt=0)  # cases open longer than this are overdue
 
 
 class AppCfg(_Strict):
@@ -89,6 +114,7 @@ class Settings(_Strict):
     bands: BandsCfg = BandsCfg()
     explain: ExplainCfg = ExplainCfg()
     rules: RulesCfg = RulesCfg()
+    decision: DecisionCfg = DecisionCfg()
     app: AppCfg = AppCfg()
     api: ApiCfg = ApiCfg()
 

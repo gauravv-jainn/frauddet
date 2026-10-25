@@ -43,7 +43,10 @@ from fraudkit.data import clean, validate_schema
 from fraudkit.db import Database
 from fraudkit.explain import explain_frame
 from fraudkit.features import featurize_with_history
+from fraudkit.decision import serving_policy
 from fraudkit.monitoring import training_ranges
+from fraudkit.rules import resolve as resolve_rules
+from fraudkit.watchlist import WatchlistStore
 from fraudkit.score import ARTIFACTS, FraudModel, load_metrics, load_serving_model
 
 log = logging.getLogger("fraudlens.api")
@@ -93,6 +96,8 @@ class ScoreOut(BaseModel):
     probability: float = Field(description="Calibrated model probability")
     band: str = Field(description="Final band after policy rules")
     model_band: str = Field(description="Band from the model alone")
+    decision: str = Field(description="approve | step_up | review | block")
+    expected_loss: float = Field(description="Calibrated probability x amount")
     flagged: bool
     action: str
     summary: str
@@ -279,7 +284,13 @@ def score(req: ScoreRequest, request: Request, client: str = Depends(authenticat
         hist = hist[hist["cc_num"].isin(df["cc_num"].unique()) & ~hist["trans_num"].isin(df["trans_num"])]
     feat = featurize_with_history(df, hist)
     e_cfg = settings().explain
-    pol = {"rules": settings().rules.model_dump(), "ranges": training_range_limits()}
+    m = load_metrics()
+    pol = {
+        "rules": resolve_rules(settings().rules.model_dump(), m),
+        "ranges": training_range_limits(),
+        "decision": serving_policy(m, settings().decision.mode, critical=settings().bands.critical),
+        "watch": WatchlistStore(database()).active_sets(),
+    }
     results = []
     for tn, e in zip(
         df["trans_num"],
@@ -292,7 +303,9 @@ def score(req: ScoreRequest, request: Request, client: str = Depends(authenticat
                 probability=e.probability,
                 band=e.band,
                 model_band=e.model_band,
-                flagged=e.band != "Low",
+                decision=e.decision,
+                expected_loss=e.expected_loss,
+                flagged=e.flagged,
                 policy_rules=[h.text for h in e.rules],
                 action=e.action,
                 summary=e.summary,

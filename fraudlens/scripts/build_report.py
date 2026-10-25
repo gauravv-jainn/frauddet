@@ -31,7 +31,8 @@ from fraudkit.config import load_config
 from fraudkit.explain import explain_frame
 from fraudkit.features import FEATURES
 from fraudkit.monitoring import drift_report, training_ranges
-from fraudkit.rules import policy_impact
+from fraudkit.decision import describe_policy, serving_policy
+from fraudkit.rules import policy_impact, resolve
 from fraudkit.score import load_serving_model
 
 ART = ROOT / "artifacts"
@@ -79,7 +80,16 @@ scored = pd.read_parquet(ART / "test_scored.parquet")
 trials = pd.read_csv(ART / "trials.csv")
 profile = json.loads((ART / "reference_profile.json").read_text(encoding="utf-8"))
 ranges = training_ranges(profile)
-te, at, cal, tn = m["test"], m["test"]["at_threshold"], m["calibration"], m["tuning"]
+te, cal, tn = m["test"], m["calibration"], m["tuning"]
+at = te.get("at_policy", te["at_threshold"])  # served decision policy
+RULES = resolve(cfg.rules.model_dump(), m)
+dec_m = m.get("decision", {})
+served_pol = serving_policy(m, cfg.decision.mode, critical=cfg.bands.critical)
+ablation = (
+    json.loads((ART / "feature_ablation.json").read_text(encoding="utf-8"))
+    if (ART / "feature_ablation.json").exists()
+    else None
+)
 thr = at["threshold"]
 version = m["run"]["model_version"]
 y, p = scored["is_fraud"].to_numpy(), scored["p"].to_numpy()
@@ -209,11 +219,11 @@ for (i, j), v in np.ndenumerate(heat.values):
 ax.set_title("Drift (PSI) of the 10 most-shifted features, by test month")
 CH_DRIFT = img(fig)
 
-impact, per_rule = policy_impact(scored, thr, at["review_cost"], cfg.rules.model_dump(), ranges)
+impact, per_rule = policy_impact(scored, served_pol, at["review_cost"], RULES, ranges)
 
 # example explanation: highest-risk caught fraud
 ex_row = scored[(scored["is_fraud"] == 1)].nlargest(1, "p")
-ex = explain_frame(fm, ex_row, thr, policy={"rules": cfg.rules.model_dump(), "ranges": ranges})[0]
+ex = explain_frame(fm, ex_row, thr, policy={"rules": RULES, "ranges": ranges, "decision": served_pol})[0]
 missed_row = scored[(scored["is_fraud"] == 1) & (scored["p"] < thr)].nlargest(1, "amt")
 ex_missed = explain_frame(fm, missed_row, thr)[0] if len(missed_row) else None
 
@@ -503,6 +513,29 @@ QA = [
         "Is it reproducible?",
         "Yes: fixed seeds, deterministic LightGBM, and a test that trains twice and compares every metric. Each "
         f"trained model gets a version id ({version}) stored with its metrics.",
+    ),
+    (
+        "What is the expected-loss policy?",
+        "Review a transaction when calibrated probability x amount is at least k times the review cost. It spends "
+        "analyst time where the money is; small risky transactions get step-up verification instead. k is tuned on "
+        "validation and the policy is served only if it beats the flat threshold on validation.",
+    ),
+    (
+        "Which policy won, and why not pick the one that was better on test?",
+        f"On validation the {dec_m.get('served', 'threshold').replace('_', ' ')} policy was cheaper, so it is served. "
+        "Choosing by test results would turn the test set into a tuning set and the reported numbers would no longer "
+        "be an honest estimate.",
+    ),
+    (
+        "Did the new card-profile features help?",
+        "No. In a two-seed ablation on validation none improved PR-AUC beyond seed noise, so they were not added to "
+        "the model. They are still used for explanations, rules and the Card 360 view.",
+    ),
+    (
+        "How do analyst decisions affect the system?",
+        "Confirming fraud blocks the card (stored as a SHA-256 hash), so later transactions on it are blocked by a "
+        "rule; merchants can be put on a watchlist. Decisions are also the labelled data for the next model, but here "
+        "they come from the test period, so they are not fed back into this model.",
     ),
     (
         "What would you do next?",
@@ -837,14 +870,14 @@ can only <b>raise</b> the band, and every hit is shown as its own reason.</p>
     table(
         pd.DataFrame(
             [
-                ("large_amount", f"amount >= {cfg.rules.review_amount:,.0f}", "High"),
+                ("large_amount", f"amount >= {RULES['review_amount']:,.0f}", "High"),
                 (
                     "spend_spike",
-                    f">= {cfg.rules.spend_spike_ratio:g}x the card's average and >= {cfg.rules.spend_spike_min_amount:,.0f}",
+                    f">= {RULES['spend_spike_ratio']:g}x the card's average and >= {RULES['spend_spike_min_amount']:,.0f}",
                     "High",
                 ),
-                ("far_from_home", f"merchant >= {cfg.rules.far_from_home_km:,.0f} km from home", "Medium"),
-                ("impossible_travel", f"> 800 km/h and a jump >= {cfg.rules.far_from_home_km:,.0f} km", "High"),
+                ("far_from_home", f"merchant >= {RULES['far_from_home_km']:,.0f} km from home", "Medium"),
+                ("impossible_travel", f"> 800 km/h and a jump >= {RULES['far_from_home_km']:,.0f} km", "High"),
                 ("burst", f">= {cfg.rules.burst_txn_1h} other transactions in the last hour", "High"),
                 ("out_of_range", "a key feature outside the range seen in training", "Medium"),
             ],
@@ -873,6 +906,96 @@ training data, such as the €12,000 example.</p>
 <p>Two candidate rules were tightened after measuring them. A plain "impossible travel" flag fired 15,074 times for 1
 extra fraud, and a 10x spending-spike rule added 2,398 reviews for 10 frauds. Rules are judged by data too.</p>""")
 
+
+# decision policy comparison
+dp_rows = []
+for name, label in (("threshold", "Flat threshold"), ("expected_loss", "Expected loss")):
+    d = dec_m.get(name)
+    if not d:
+        continue
+    param = f"p >= {d['value']:.4f}" if name == "threshold" else f"p x amount >= {d['k']:g} x review cost"
+    for split in ("validation", "test"):
+        if split in d:
+            x = d[split]
+            dp_rows.append(
+                (
+                    label + (" (served)" if dec_m.get("served") == name else ""),
+                    param,
+                    split,
+                    f"{x['flagged']:,}",
+                    f"{x['recall']:.2%}",
+                    f"{x['precision']:.2%}",
+                    f"{x['total_cost']:,.0f}",
+                )
+            )
+DP_TABLE = (
+    table(pd.DataFrame(dp_rows, columns=["policy", "rule", "data", "flagged", "recall", "precision", "total cost"]))
+    if dp_rows
+    else "<p>(not available)</p>"
+)
+if dec_m:
+    kg = pd.DataFrame(dec_m["expected_loss"]["k_grid"])
+    fig, ax = plt.subplots(figsize=(6.2, 2.3))
+    ax.plot(kg["k"], kg["total_cost"], marker="o", color=BLUE)
+    ax.scatter([dec_m["expected_loss"]["k"]], [dec_m["expected_loss"]["validation"]["total_cost"]], color=RED, zorder=3)
+    ax.set_xlabel("k (review when p x amount >= k x review cost)")
+    ax.set_ylabel("validation cost")
+    ax.set_title("Tuning k for the expected-loss policy (validation)")
+    CH_K = img(fig)
+else:
+    CH_K = ""
+if ablation:
+    AB_TABLE = table(
+        pd.DataFrame(
+            [
+                (
+                    r["candidate"],
+                    f"{r['val_pr_auc_by_seed'][0]:.4f}",
+                    f"{r['val_pr_auc_by_seed'][1]:.4f}",
+                    f"{r['mean']:.4f}",
+                )
+                for r in ablation["rows"]
+            ],
+            columns=["feature set", "seed 42", "seed 7", "mean validation PR-AUC"],
+        )
+    )
+    AB_TEXT = (
+        f"Seed-to-seed noise of the current feature set: {ablation['seed_noise_baseline']:.4f}. "
+        f"Kept: {', '.join(ablation['kept']) if ablation['kept'] else 'none - no candidate beat the noise'}."
+    )
+else:
+    AB_TABLE, AB_TEXT = "<p>(run scripts/feature_ablation.py)</p>", ""
+el_t, th_t = dec_m.get("expected_loss", {}).get("test", {}), dec_m.get("threshold", {}).get("test", {})
+sections.append(f"""
+<h2 class='pb'>10b. Decision policy: one threshold or expected loss?</h2>
+<p>A flat threshold treats a €2 and a €2,000 transaction the same. The <b>expected-loss policy</b> reviews when
+<i>calibrated probability x amount &ge; k x review cost</i>: reviewing is worth it when the money expected to be lost
+exceeds what the review costs. Risky but cheap transactions get <b>step-up verification</b> (the cardholder confirms)
+instead of an analyst. k is tuned on validation; the served policy is whichever is cheaper on validation.</p>
+{CH_K}
+{DP_TABLE}
+<div class='box'><b>Honest reading.</b> On validation the flat threshold was cheaper, so it is served
+(<i>{e(describe_policy(served_pol))}</i>). On the test period the expected-loss policy would have cost
+{th_t.get("total_cost", 0) - el_t.get("total_cost", 0):,.0f} less, at lower recall ({el_t.get("recall", 0):.1%} vs
+{th_t.get("recall", 0):.1%}). We do not switch on test results: that would be tuning on the test set. The app lets the
+user switch policy in the sidebar and see the effect live.</div>
+<h3>Feature ablation (validation only)</h3>
+<p>Three card-profile features were tried: amount vs the card's previous maximum, the card's share of purchases in
+the category, and how usual the hour is for the card. Same split, encoder and tuned parameters, two seeds:</p>
+{AB_TABLE}
+<p>{e(AB_TEXT)} They are kept as context for explanations, rules and the Card 360 view, not as model inputs.</p>
+<h3>Rule limits derived from data</h3>
+{
+    kv(
+        [
+            (k, f"{m.get('rules_auto', {}).get(k, RULES[k]):,.0f}" if k != "spend_spike_ratio" else f"{RULES[k]:g}x")
+            for k in ("review_amount", "far_from_home_km", "spend_spike_ratio", "spend_spike_min_amount")
+        ]
+        + [(f"how {k}", v) for k, v in m.get("rules_auto", {}).get("derivation", {}).items()]
+    )
+}
+""")
+
 sections.append(f"""
 <h2>11. Engineering that supports the results</h2>
 <ul>
@@ -880,8 +1003,10 @@ sections.append(f"""
 version {version} is stored with its metrics in <code>artifacts/runs/</code>.</li>
 <li><b>Tested:</b> leakage, SHAP reconstruction, reason correctness, calibration maths (weighted average precision
 equals scikit-learn), drift, rules, authentication, API and a click-through of every app page per role.</li>
-<li><b>Product:</b> Streamlit app with login and roles (viewer / analyst / admin), case queue with audit trail,
-batch scoring, monitoring; FastAPI scoring API with API keys and rate limits.</li>
+<li><b>Product:</b> Streamlit app with login and roles (viewer / analyst / admin); case queue with board and
+table views, bulk actions, SLA timers, comments and audit trail; Card 360 (timeline, map, spending profile);
+watchlists (blocked cards stored as hashes, watched merchants) that feed the rules; batch scoring; monitoring;
+FastAPI scoring API with API keys and rate limits returning the decision and expected loss.</li>
 <li><b>Training run:</b> {m["run"]["total_seconds"]:.0f} s on {m["machine"]["cpu_count"]} CPU threads; libraries:
 {", ".join(f"{k} {v}" for k, v in m["versions"].items())}.</li>
 </ul>

@@ -27,6 +27,13 @@ def sanitize_csv_frame(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def card_hash(cc_num) -> str:
+    """Stable pseudonymous id for a card (used by the card blocklist so full numbers are never stored)."""
+    import hashlib
+
+    return hashlib.sha256(str(int(cc_num)).encode()).hexdigest()
+
+
 def mask_card(cc_num) -> str:
     """Only the last four digits of a card number are ever stored or shown outside the raw data."""
     s = str(cc_num)

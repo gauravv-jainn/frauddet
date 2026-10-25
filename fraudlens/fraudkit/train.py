@@ -276,6 +276,7 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
     from . import data as D
     from .costs import best_threshold, confusion_at, cost_curve, downsample_curve
     from .features import CATEGORICAL, CONTEXT, FEATURES, NUMERIC, MerchantEncoder, build_features, model_frame
+    from .decision import policy_flags, tune_expected_loss
     from .monitoring import reference_profile
     from .score import Calibrator, FraudModel
 
@@ -582,8 +583,79 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             R.log.log("threshold", "threshold", thr)
             R.log.log("threshold", "val_total_cost", at_val["total_cost"])
             R.log.log("threshold", "val_recall", at_val["recall"])
+            # expected-loss policy: review when p x amount >= k x review cost; k tuned on validation
+            critical = float(cfg["bands"]["critical"])
+            amt_val = val["amt"].to_numpy()
+            best_k, k_table = tune_expected_loss(y_val, p_val, amt_val, review_cost, critical)
+            el_pol = {"mode": "expected_loss", "k": best_k, "review_cost": review_cost, "critical": critical}
+            el_val = confusion_at(y_val, policy_flags(p_val, amt_val, el_pol).astype(float), amt_val, 0.5, review_cost)
+            thr_pol = {"mode": "threshold", "threshold": thr, "review_cost": review_cost, "critical": critical}
+            thr_val = confusion_at(
+                y_val, policy_flags(p_val, amt_val, thr_pol).astype(float), amt_val, 0.5, review_cost
+            )
+            served = "expected_loss" if el_val["total_cost"] < thr_val["total_cost"] else "threshold"
+            M["decision"] = {
+                "served": served,
+                "chosen_on": "validation (lower total cost)",
+                "threshold": {"value": thr, "validation": thr_val},
+                "expected_loss": {"k": best_k, "validation": el_val, "k_grid": k_table},
+            }
+            R.log.log("threshold", "expected_loss_k", best_k)
+            R.log.log("threshold", "val_cost_expected_loss", el_val["total_cost"])
+            R.log.log("threshold", "val_cost_threshold_policy", thr_val["total_cost"])
+            R.log.log("threshold", "served_policy", served)
+
+            # policy-rule limits from the data: amount and distance from the training data, spike rule on validation
+            fit_fraud_max = float(fit.loc[fit["is_fraud"] == 1, "amt"].max())
+            review_amount = float(np.ceil(1.25 * fit_fraud_max / 500.0) * 500.0)
+            far_km = float(np.ceil(2.0 * float(fit["dist_home_km"].max()) / 100.0) * 100.0)
+            served_pol = el_pol if served == "expected_loss" else thr_pol
+            base_flags = policy_flags(p_val, amt_val, served_pol)
+            spike_rows = []
+            ratio_val = val["amt_to_card_mean"].to_numpy()
+            for ratio in (10.0, 15.0, 20.0, 30.0, 50.0):
+                for min_amt in (500.0, 1000.0, 1500.0, 2000.0):
+                    hit = (ratio_val >= ratio) & (amt_val >= min_amt)
+                    mm = confusion_at(y_val, (base_flags | hit).astype(float), amt_val, 0.5, review_cost)
+                    spike_rows.append(
+                        {
+                            "ratio": ratio,
+                            "min_amount": min_amt,
+                            "hits": int(hit.sum()),
+                            "extra_flags": int((hit & ~base_flags).sum()),
+                            "extra_frauds": int((hit & ~base_flags & (y_val == 1)).sum()),
+                            "total_cost": mm["total_cost"],
+                        }
+                    )
+            best_spike = min(spike_rows, key=lambda r: (r["total_cost"], -r["ratio"], -r["min_amount"]))
+            M["rules_auto"] = {
+                "review_amount": review_amount,
+                "far_from_home_km": far_km,
+                "spend_spike_ratio": best_spike["ratio"],
+                "spend_spike_min_amount": best_spike["min_amount"],
+                "derivation": {
+                    "review_amount": (
+                        f"1.25 x largest fraud amount in the fit period ({fit_fraud_max:,.2f}), rounded up to 500"
+                    ),
+                    "far_from_home_km": "2 x largest home-merchant distance in the fit period, rounded up to 100 km",
+                    "spend_spike": "grid search on validation, lowest total cost of policy + rule (ties -> stricter)",
+                },
+                "spend_spike_grid": spike_rows,
+            }
+            R.log.log(
+                "threshold",
+                "rules_auto",
+                {
+                    k: M["rules_auto"][k]
+                    for k in ("review_amount", "far_from_home_km", "spend_spike_ratio", "spend_spike_min_amount")
+                },
+            )
             view.advance("threshold")
-            st["note"] = f"threshold {thr:.4f}, val cost {at_val['total_cost']:,.0f} vs {at_val['cost_no_model']:,.0f}"
+            st["note"] = (
+                f"threshold {thr:.4f}, EL k={best_k:g}; served {served} "
+                f"(val cost {min(el_val['total_cost'], thr_val['total_cost']):,.0f} vs "
+                f"{at_val['cost_no_model']:,.0f} without a model)"
+            )
 
         # ---------------------------------------------------------------- test (once)
         with R.stage("test", 3) as st:
@@ -593,6 +665,12 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
             view.advance("test", f"PR-AUC {pr:.4f} [{lo:.4f}, {hi:.4f}]")
             pr_raw = float(average_precision_score(y_test, p_test_raw))
             at_test = confusion_at(y_test, p_test, test["amt"].to_numpy(), thr, review_cost)
+            amt_test = test["amt"].to_numpy()
+            for name, pol in (("threshold", thr_pol), ("expected_loss", el_pol)):
+                M["decision"][name]["test"] = confusion_at(
+                    y_test, policy_flags(p_test, amt_test, pol).astype(float), amt_test, 0.5, review_cost
+                )
+            at_policy = M["decision"][served]["test"]
             curve_test = cost_curve(y_test, p_test, test["amt"].to_numpy(), review_cost)
             view.advance("test")
             M["test"] = {
@@ -606,6 +684,7 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
                 "reliability_before": reliability_table(y_test, p_test_raw),
                 "reliability_after": reliability_table(y_test, p_test),
                 "at_threshold": at_test,
+                "at_policy": at_policy,
                 "curve": downsample_curve(curve_test).to_dict(orient="list"),
             }
             for k in ["pr_auc", "roc_auc", "brier_after_calibration"]:

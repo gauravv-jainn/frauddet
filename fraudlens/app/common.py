@@ -35,6 +35,8 @@ LOWER = "#15803D"
 BAND_COLORS = {"Low": "#15803D", "Medium": "#CA8A04", "High": "#EA580C", "Critical": "#B91C1C"}
 BANDS = ["Low", "Medium", "High", "Critical"]
 STATUS_COLORS = {"stable": "#15803D", "moderate": "#CA8A04", "significant": "#B91C1C"}
+ACTION_COLORS = {"approve": "#15803D", "step_up": "#CA8A04", "review": "#EA580C", "block": "#B91C1C"}
+ACTION_LABELS = {"approve": "Approve", "step_up": "Step-up", "review": "Review", "block": "Block"}
 
 pio.templates["fraudlens"] = go.layout.Template(
     layout=go.Layout(
@@ -54,26 +56,49 @@ pio.templates.default = "plotly_white+fraudlens"
 
 CSS = """
 <style>
-.block-container {padding-top: 2.2rem; max-width: 1240px;}
-h1 {font-size: 1.75rem !important; font-weight: 650 !important;}
-h2, h3 {font-weight: 600 !important;}
-div[data-testid="stMetric"] {background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px 14px;}
-div[data-testid="stMetricLabel"] p {color: #475569; font-size: 0.8rem;}
-div[data-testid="stMetricValue"] {font-size: 1.55rem; font-weight: 600;}
-.fl-card {border: 1px solid #E2E8F0; border-left-width: 5px; border-radius: 8px; padding: 10px 14px;
-          margin-bottom: 8px; background: #FFFFFF;}
+:root { --fl-ink:#0F172A; --fl-muted:#64748B; --fl-line:#E2E8F0; --fl-soft:#F8FAFC; --fl-brand:#1D4ED8; }
+.block-container {padding-top: 3.4rem; max-width: 1280px;}
+h1 {font-size: 1.6rem !important; font-weight: 700 !important; letter-spacing: -0.01em;}
+h2, h3 {font-weight: 650 !important; letter-spacing: -0.005em;}
+div[data-testid="stMetric"] {background: #FFFFFF; border: 1px solid var(--fl-line); border-radius: 12px;
+    padding: 12px 14px; box-shadow: 0 1px 2px rgba(15,23,42,.04);}
+div[data-testid="stMetricLabel"] p {color: var(--fl-muted); font-size: 0.78rem; text-transform: uppercase;
+    letter-spacing: .04em; font-weight: 600;}
+div[data-testid="stMetricValue"] {font-size: 1.5rem; font-weight: 700; color: var(--fl-ink);}
+.fl-header {display:flex; justify-content:space-between; align-items:flex-end; gap:16px;
+    border-bottom:1px solid var(--fl-line); padding-bottom:10px; margin-bottom:14px;}
+.fl-header h1 {margin:0 !important; padding:0 !important; line-height:1.25 !important;}
+.fl-header .sub {color: var(--fl-muted); font-size: .9rem; margin-top: 2px;}
+.fl-header .badges {display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;}
+.fl-pill {display:inline-block; padding:3px 10px; border-radius:999px; font-size:.75rem; font-weight:600;
+    background:#EEF2FF; color:#1E3A8A; border:1px solid #C7D2FE; white-space:nowrap;}
+.fl-pill.grey {background:#F1F5F9; color:#334155; border-color:#E2E8F0;}
+.fl-card {border: 1px solid var(--fl-line); border-left-width: 5px; border-radius: 10px; padding: 10px 14px;
+    margin-bottom: 8px; background: #FFFFFF;}
 .fl-card.raise {border-left-color: #B91C1C; background: #FEF2F2;}
 .fl-card.lower {border-left-color: #15803D; background: #F0FDF4;}
 .fl-card.rule {border-left-color: #7C3AED; background: #F5F3FF;}
-.fl-card .t {font-size: 0.95rem; color: #0F172A;}
-.fl-card .w {font-size: 0.75rem; color: #475569; margin-top: 2px;}
-.fl-chip {display: inline-block; padding: 3px 12px; border-radius: 999px; color: white; font-weight: 600;
-          font-size: 0.85rem;}
-.fl-muted {color: #475569; font-size: 0.88rem;}
-.fl-action {border: 1px solid #CBD5E1; border-radius: 8px; padding: 10px 14px; background: #F8FAFC;}
-.fl-user {font-size: 0.85rem; color: #0F172A;}
+.fl-card.note {border-left-color: #64748B; background: #F8FAFC;}
+.fl-card .t {font-size: 0.93rem; color: var(--fl-ink);}
+.fl-card .w {font-size: 0.74rem; color: var(--fl-muted); margin-top: 2px;}
+.fl-chip {display: inline-block; padding: 3px 12px; border-radius: 999px; color: white; font-weight: 650;
+    font-size: 0.82rem;}
+.fl-muted {color: var(--fl-muted); font-size: 0.88rem;}
+.fl-action {border: 1px solid #CBD5E1; border-radius: 10px; padding: 10px 14px; background: var(--fl-soft);}
+.fl-lane {border:1px solid var(--fl-line); border-radius:12px; padding:10px; background:var(--fl-soft);
+    min-height:120px;}
+.fl-lane h4 {margin:0 0 8px 0; font-size:.85rem; color:#334155; text-transform:uppercase; letter-spacing:.04em;}
+.fl-case {background:#FFFFFF; border:1px solid var(--fl-line); border-radius:10px; padding:8px 10px; margin-bottom:6px;
+    font-size:.82rem;}
+.fl-case b {color: var(--fl-ink);}
+.fl-case .meta {color: var(--fl-muted); font-size:.74rem;}
+.fl-overdue {color:#B91C1C; font-weight:700;}
+section[data-testid="stSidebar"] .fl-muted {color:#94A3B8;}
+.fl-user {font-size: 0.85rem;}
 .fl-role {display: inline-block; padding: 1px 8px; border-radius: 6px; background: #E0E7FF; color: #1E3A8A;
-          font-size: 0.75rem; font-weight: 600; margin-left: 4px;}
+    font-size: 0.72rem; font-weight: 700; margin-left: 4px;}
+.fl-inbox {border:1px solid rgba(148,163,184,.35); border-radius:10px; padding:8px 10px; margin:6px 0;
+    font-size:.82rem;}
 </style>
 """
 
@@ -88,11 +113,24 @@ def get_config() -> dict:
     return get_settings().model_dump()
 
 
-def policy() -> dict:
-    """Policy-rule settings + training ranges, passed to every explanation (see fraudkit/rules.py)."""
-    from fraudkit.monitoring import training_ranges
+def get_watchlist():
+    from fraudkit.watchlist import WatchlistStore
 
-    return {"rules": get_settings().rules.model_dump(), "ranges": training_ranges(get_reference_profile())}
+    return WatchlistStore(get_db())
+
+
+def policy(decision: dict | None = None) -> dict:
+    """Everything an explanation needs to decide: resolved rule limits, training ranges, the decision policy
+    (sidebar / validated) and the live watchlists (blocked cards, watched merchants). See fraudkit/rules.py."""
+    from fraudkit.monitoring import training_ranges
+    from fraudkit.rules import resolve
+
+    return {
+        "rules": resolve(get_settings().rules.model_dump(), get_metrics()),
+        "ranges": training_ranges(get_reference_profile()),
+        "decision": decision or current_policy(),
+        "watch": get_watchlist().active_sets(),
+    }
 
 
 def explain_kw() -> dict:
@@ -260,11 +298,22 @@ def sidebar_user():
     if not u:
         return
     with st.sidebar:
+        st.divider()
         st.markdown(
             f"<div class='fl-user'>Signed in as <b>{html.escape(u['username'])}</b>"
             f"<span class='fl-role'>{html.escape(u['role'])}</span></div>",
             unsafe_allow_html=True,
         )
+        sla = get_settings().decision.sla_hours
+        s = get_case_store().stats(sla, u["username"])
+        if s["total"]:
+            over = f" &middot; <span class='fl-overdue'>{s['my_overdue']} overdue</span>" if s["my_overdue"] else ""
+            st.markdown(
+                f"<div class='fl-inbox'>Inbox: <b>{s['my_open']}</b> assigned to you{over}<br>"
+                f"<span class='fl-muted'>{s['open']} open in the queue &middot; {s['overdue']} past the "
+                f"{sla:g} h SLA</span></div>",
+                unsafe_allow_html=True,
+            )
         if st.button("Sign out", key="sign_out"):
             get_db().log_admin(u["username"], "logout", u["username"])
             logout("You have signed out.")
@@ -276,9 +325,19 @@ def page_setup(title: str, subtitle: str | None = None, permission: str = "view"
         st.set_page_config(page_title=f"FraudLens - {title}", layout="wide")
     require_login()
     st.markdown(CSS, unsafe_allow_html=True)
-    st.title(title)
-    if subtitle:
-        st.markdown(f"<div class='fl-muted'>{html.escape(subtitle)}</div>", unsafe_allow_html=True)
+    badges = ""
+    if artifacts_ready():
+        m = get_metrics()
+        mode = (m.get("decision") or {}).get("served", "threshold").replace("_", " ")
+        badges = (
+            f"<span class='fl-pill'>model {html.escape(m['run'].get('model_version', 'unversioned'))}</span>"
+            f"<span class='fl-pill grey'>validated policy: {html.escape(mode)}</span>"
+        )
+    sub = f"<div class='sub'>{html.escape(subtitle)}</div>" if subtitle else ""
+    st.markdown(
+        f"<div class='fl-header'><div><h1>{html.escape(title)}</h1>{sub}</div><div class='badges'>{badges}</div></div>",
+        unsafe_allow_html=True,
+    )
     require_permission(permission)
 
 
@@ -381,29 +440,65 @@ def _save_pref(name: str):
     st.session_state[f"pref_{name}"] = st.session_state[f"w_{name}"]
 
 
-def sidebar_controls() -> tuple[float, float]:
-    """Threshold and review cost shared by all pages (persisted across page switches)."""
+def current_policy() -> dict:
+    """Decision policy from the sidebar (validated by default)."""
+    from fraudkit.decision import serving_policy
+
+    m = get_metrics()
+    ss = st.session_state
+    critical = get_settings().bands.critical
+    if ss.get("pref_use_validated", True):
+        return serving_policy(m, get_settings().decision.mode, critical=critical)
+    mode = "expected_loss" if ss.get("pref_policy_mode", "Expected loss") == "Expected loss" else "threshold"
+    return serving_policy(
+        m,
+        mode,
+        review_cost=ss.get("pref_review_cost"),
+        threshold=ss.get("pref_custom_threshold"),
+        k=ss.get("pref_custom_k"),
+        critical=critical,
+    )
+
+
+def sidebar_controls() -> dict:
+    """Decision policy shared by all pages (persisted across page switches). Returns the policy dict:
+    mode, k, threshold, review_cost, critical (see fraudkit/decision.py)."""
+    from fraudkit.decision import describe_policy
+
     m = get_metrics()
     validated = float(m["threshold"]["value"])
     default_cost = float(m["threshold"]["review_cost"])
+    default_k = float((m.get("decision") or {}).get("expected_loss", {}).get("k", 1.0))
     ss = st.session_state
     with st.sidebar:
-        st.markdown("### Decision settings")
+        st.markdown("##### Decision policy")
         st.checkbox(
-            "Use validated threshold",
+            "Use validated policy",
             key=_persisted_widget("use_validated", True),
             on_change=_save_pref,
             args=("use_validated",),
-            help="The threshold that minimised missed-fraud + review cost on the validation period.",
+            help="The policy and parameters that minimised missed fraud + review cost on the validation period.",
         )
-        if ss["pref_use_validated"]:
-            thr = validated
-            st.markdown(
-                f"<div class='fl-muted'>Threshold: <b>{validated:.4f}</b> (chosen on validation)</div>",
-                unsafe_allow_html=True,
+        if not ss["pref_use_validated"]:
+            st.radio(
+                "Policy",
+                ["Expected loss", "Flat threshold"],
+                key=_persisted_widget("policy_mode", "Expected loss"),
+                on_change=_save_pref,
+                args=("policy_mode",),
+                horizontal=True,
             )
-        else:
-            thr = float(
+            if ss["pref_policy_mode"] == "Expected loss":
+                st.slider(
+                    "k: review when p x amount >= k x review cost",
+                    0.25,
+                    10.0,
+                    step=0.25,
+                    key=_persisted_widget("custom_k", default_k),
+                    on_change=_save_pref,
+                    args=("custom_k",),
+                )
+            else:
                 st.slider(
                     "Flag threshold (calibrated probability)",
                     0.001,
@@ -414,27 +509,51 @@ def sidebar_controls() -> tuple[float, float]:
                     args=("custom_threshold",),
                     format="%.3f",
                 )
+            st.number_input(
+                "Review cost per flagged transaction (€)",
+                min_value=0.0,
+                max_value=500.0,
+                step=1.0,
+                key=_persisted_widget("review_cost", default_cost),
+                on_change=_save_pref,
+                args=("review_cost",),
             )
-        st.number_input(
-            "Review cost per flagged transaction (€)",
-            min_value=0.0,
-            max_value=500.0,
-            step=1.0,
-            key=_persisted_widget("review_cost", default_cost),
-            on_change=_save_pref,
-            args=("review_cost",),
-        )
-        version = m["run"].get("model_version", "unversioned")
-        st.caption(f"Model {m['selected_model']} · version {version}")
+        pol = current_policy()
+        st.markdown(f"<div class='fl-muted'>{html.escape(describe_policy(pol))}</div>", unsafe_allow_html=True)
     sidebar_user()
-    return thr, float(ss["pref_review_cost"])
+    return pol
 
 
 # ----------------------------------------------------------------------------- helpers
-def business_metrics(scored: pd.DataFrame, thr: float, review_cost: float) -> dict:
-    return confusion_at(
-        scored["is_fraud"].to_numpy(), scored["p"].to_numpy(), scored["amt"].to_numpy(), thr, review_cost
+def business_metrics(scored: pd.DataFrame, pol: dict) -> dict:
+    """Money metrics of the model-side decision policy (equals metrics.json -> test.at_policy when validated)."""
+    from fraudkit.decision import policy_flags
+
+    flags = policy_flags(scored["p"].to_numpy(), scored["amt"].to_numpy(), pol)
+    m = confusion_at(
+        scored["is_fraud"].to_numpy(), flags.astype(float), scored["amt"].to_numpy(), 0.5, pol["review_cost"]
     )
+    risky = scored["p"].to_numpy() >= get_model().band_bounds(pol["threshold"])["medium"]
+    m["step_up"] = int((risky & ~flags).sum())
+    return m
+
+
+def decisions_vector(scored: pd.DataFrame, pol: dict) -> np.ndarray:
+    """approve / step_up / review / block for every row, model-side policy only (fast, vectorised)."""
+    from fraudkit.decision import policy_flags
+
+    p = scored["p"].to_numpy()
+    flags = policy_flags(p, scored["amt"].to_numpy(), pol)
+    medium = get_model().band_bounds(pol["threshold"])["medium"]
+    return np.where(
+        p >= pol["critical"], "block", np.where(flags, "review", np.where(p >= medium, "step_up", "approve"))
+    )
+
+
+def action_badge(decision: str) -> str:
+    color = ACTION_COLORS.get(decision, SLATE)
+    label = ACTION_LABELS.get(decision, decision)
+    return f"<span class='fl-chip' style='background:{color}'>{html.escape(label)}</span>"
 
 
 def money(x: float, decimals: int = 0) -> str:
@@ -503,19 +622,49 @@ def gauge(p: float, threshold: float, bounds: dict) -> go.Figure:
     return fig
 
 
-# (path, title, permission needed to see the page in the navigation)
+# (section, path, title, icon, permission needed to see the page in the navigation)
 PAGES = [
-    ("views/1_Dashboard.py", "Dashboard", "view"),
-    ("views/2_Check_Transaction.py", "Check a transaction", "view"),
-    ("views/3_Batch_Scoring.py", "Batch scoring", "score"),
-    ("views/4_Case_Queue.py", "Case queue", "view"),
-    ("views/7_Monitoring.py", "Monitoring", "view"),
-    ("views/5_Model_Report.py", "Model report", "view"),
-    ("views/6_Training_Lab.py", "Training Lab", "view"),
-    ("views/8_Admin.py", "Admin", "manage_users"),
-    ("views/9_Account.py", "My account", "view"),
+    ("Overview", "views/1_Dashboard.py", "Dashboard", ":material/space_dashboard:", "view"),
+    ("Overview", "views/7_Monitoring.py", "Monitoring", ":material/monitor_heart:", "view"),
+    ("Investigate", "views/4_Case_Queue.py", "Case queue", ":material/inbox:", "view"),
+    ("Investigate", "views/2_Check_Transaction.py", "Check a transaction", ":material/search:", "view"),
+    ("Investigate", "views/10_Card_360.py", "Card 360", ":material/credit_card:", "view"),
+    ("Investigate", "views/3_Batch_Scoring.py", "Batch scoring", ":material/upload_file:", "score"),
+    ("Model", "views/5_Model_Report.py", "Model report", ":material/analytics:", "view"),
+    ("Model", "views/6_Training_Lab.py", "Training Lab", ":material/model_training:", "view"),
+    ("Settings", "views/8_Admin.py", "Admin", ":material/admin_panel_settings:", "manage_users"),
+    ("Settings", "views/9_Account.py", "My account", ":material/person:", "view"),
 ]
 
 
 def pages_list():
-    return [(p, t) for p, t, perm in PAGES if allowed(perm)]
+    """[(path, title)] the current user may see."""
+    return [(p, t) for _, p, t, _, perm in PAGES if allowed(perm)]
+
+
+def navigation_sections() -> dict:
+    out: dict[str, list] = {}
+    for section, path, title, icon, perm in PAGES:
+        if allowed(perm):
+            out.setdefault(section, []).append(st.Page(path, title=title, icon=icon))
+    return out
+
+
+def open_card(cc_num):
+    """Jump to the Card 360 page for a card."""
+    st.session_state["card360_card"] = int(cc_num)
+    st.switch_page("views/10_Card_360.py")
+
+
+@st.cache_data(show_spinner=False)
+def _card_refs(mtime: float) -> dict:
+    from fraudkit.security import card_hash
+
+    return {card_hash(c): int(c) for c in get_history()["cc_num"].unique()}
+
+
+def card_from_ref(card_ref: str | None):
+    """cc_num for a hashed card reference (cases store only the hash and the last four digits)."""
+    if not card_ref:
+        return None
+    return _card_refs(_mtime(ARTIFACTS / "history.parquet")).get(card_ref)

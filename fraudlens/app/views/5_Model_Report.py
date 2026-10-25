@@ -13,6 +13,7 @@ from common import (
     RAISE,
     get_metrics,
     get_scored,
+    get_settings,
     money,
     money_short,
     page_setup,
@@ -20,15 +21,17 @@ from common import (
     require_artifacts,
     sidebar_controls,
 )
+from fraudkit.decision import describe_policy, serving_policy
 from fraudkit.rules import policy_impact
 
 page_setup(
     "Model report", "Everything on this page is read from artifacts/metrics.json, written by the last training run."
 )
 require_artifacts()
-thr, review_cost = sidebar_controls()
+sidebar_controls()
 m = get_metrics()
-te, at = m["test"], m["test"]["at_threshold"]
+te = m["test"]
+at = te.get("at_policy", te["at_threshold"])  # served decision policy (falls back for older artifacts)
 
 st.subheader("Validation leaderboard")
 lb = pd.DataFrame(m["leaderboard"])
@@ -65,8 +68,8 @@ c[3].metric(
     delta_color="inverse",
 )
 c = st.columns(4)
-c[0].metric("Recall at threshold", f"{at['recall']:.1%}")
-c[1].metric("Precision at threshold", f"{at['precision']:.1%}")
+c[0].metric("Recall (served policy)", f"{at['recall']:.1%}")
+c[1].metric("Precision (served policy)", f"{at['precision']:.1%}")
 c[2].metric("False alarms / 10k genuine", f"{at['false_alarms_per_10k_genuine']:.1f}")
 c[3].metric(
     "Saved vs no model",
@@ -75,9 +78,11 @@ c[3].metric(
     "with the model: missed "
     f"{money(at['missed_amount'])} + reviews {money(at['review_cost_total'])}",
 )
+served_pol = serving_policy(m, get_settings().decision.mode, critical=get_settings().bands.critical)
 st.caption(
-    f"Threshold {at['threshold']:.4f} chosen on validation with review cost {money(at['review_cost'], 2)} "
-    f"per flagged transaction. Flagged {at['flagged']:,} of {at['transactions']:,} test transactions."
+    f"Served policy (chosen on validation): {describe_policy(served_pol)}, review cost "
+    f"{money(at['review_cost'], 2)} per flagged transaction. Flagged {at['flagged']:,} of {at['transactions']:,} "
+    "test transactions."
 )
 
 left, right = st.columns(2)
@@ -152,9 +157,80 @@ with right:
         "curve; it is the training-time choice."
     )
 
+st.subheader("Decision policy: flat threshold vs expected loss")
+dec = m.get("decision")
+if not dec:
+    st.info("This model was trained before the expected-loss policy existed; retrain to compare policies.")
+else:
+    rows = []
+    for name, label in (("threshold", "Flat threshold"), ("expected_loss", "Expected loss")):
+        d = dec[name]
+        param = f"p >= {d['value']:.4f}" if name == "threshold" else f"p x amount >= {d['k']:g} x review cost"
+        for split in ("validation", "test"):
+            if split in d:
+                x = d[split]
+                rows.append(
+                    {
+                        "policy": label + (" (served)" if dec["served"] == name else ""),
+                        "rule": param,
+                        "data": split,
+                        "flagged": x["flagged"],
+                        "recall": x["recall"],
+                        "precision": x["precision"],
+                        "missed fraud": x["missed_amount"],
+                        "review cost": x["review_cost_total"],
+                        "total cost": x["total_cost"],
+                    }
+                )
+    st.dataframe(
+        pd.DataFrame(rows),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "recall": st.column_config.NumberColumn(format="%.4f"),
+            "precision": st.column_config.NumberColumn(format="%.3f"),
+            "missed fraud": st.column_config.NumberColumn(format="€%.0f"),
+            "review cost": st.column_config.NumberColumn(format="€%.0f"),
+            "total cost": st.column_config.NumberColumn(format="€%.0f"),
+        },
+    )
+    kg = pd.DataFrame(dec["expected_loss"]["k_grid"])
+    fig = go.Figure(go.Scatter(x=kg["k"], y=kg["total_cost"], mode="lines+markers", line=dict(color=BLUE)))
+    fig.add_trace(
+        go.Scatter(
+            x=[dec["expected_loss"]["k"]],
+            y=[dec["expected_loss"]["validation"]["total_cost"]],
+            mode="markers",
+            marker=dict(size=12, color=RAISE, symbol="diamond"),
+            name="chosen k",
+        )
+    )
+    fig.update_layout(
+        title="Validation cost by k (expected-loss policy)",
+        height=300,
+        xaxis_title="k (review when p x amount >= k x review cost)",
+        yaxis_title="missed fraud + reviews (€)",
+        showlegend=False,
+    )
+    st.plotly_chart(fig, width="stretch")
+    st.caption(
+        f"The served policy ({dec['served'].replace('_', ' ')}) is the one with the lower total cost on validation; "
+        "the test rows are the independent check, computed once."
+    )
+
 st.subheader("Policy rules on top of the model (test period)")
-pol = policy()
-summary, per_rule = policy_impact(get_scored(), at["threshold"], at["review_cost"], pol["rules"], pol["ranges"])
+ra = m.get("rules_auto")
+if ra:
+    st.markdown(
+        f"Limits derived from the data at training time: review amount **{money(ra['review_amount'])}** "
+        f"({ra['derivation']['review_amount']}), far from home **{ra['far_from_home_km']:,.0f} km** "
+        f"({ra['derivation']['far_from_home_km']}), spending spike **{ra['spend_spike_ratio']:g}x** the card average "
+        f"and at least **{money(ra['spend_spike_min_amount'])}** ({ra['derivation']['spend_spike']})."
+    )
+pol = policy(serving_policy(m, get_settings().decision.mode, critical=get_settings().bands.critical))
+summary, per_rule = policy_impact(
+    get_scored(), pol["decision"], pol["decision"]["review_cost"], pol["rules"], pol["ranges"]
+)
 st.dataframe(
     summary,
     hide_index=True,
@@ -171,10 +247,10 @@ st.dataframe(
 )
 st.dataframe(per_rule, hide_index=True, width="stretch")
 st.caption(
-    "Rules are business policy, not learned: they catch transactions the simulator never produced as fraud "
-    "(e.g. very large amounts, merchants thousands of km away), where the model has no evidence. On this simulated "
-    "test set they mostly add reviews; their value is protection outside the training distribution. Thresholds live "
-    "in configs/default.yaml -> rules."
+    "Rules are business policy on top of the model: they cover transactions the simulator never produced as fraud "
+    "(very large amounts, merchants thousands of km away, blocked cards). High/Critical rules send a transaction to "
+    "review or block it; Medium rules only ask for step-up verification. On this simulated test set they mostly add "
+    "reviews; their value is protection outside the training data."
 )
 
 st.subheader("What drives the model (global SHAP)")

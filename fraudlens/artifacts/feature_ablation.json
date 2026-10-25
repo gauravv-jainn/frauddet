@@ -1,0 +1,67 @@
+{
+  "model_version": "20261025-224238-a6506be0",
+  "seeds": [
+    42,
+    7
+  ],
+  "metric": "validation PR-AUC",
+  "seed_noise_baseline": 0.00045130405977145127,
+  "rows": [
+    {
+      "candidate": "current feature set",
+      "extra_features": [],
+      "val_pr_auc_by_seed": [
+        0.9844467087178023,
+        0.9848980127775737
+      ],
+      "mean": 0.9846723607476879
+    },
+    {
+      "candidate": "+ amount vs card's previous maximum",
+      "extra_features": [
+        "amt_to_card_max"
+      ],
+      "val_pr_auc_by_seed": [
+        0.984854689690216,
+        0.9840046017550871
+      ],
+      "mean": 0.9844296457226516
+    },
+    {
+      "candidate": "+ share of the card's purchases in this category",
+      "extra_features": [
+        "cat_share"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9847320310207064,
+        0.98398424272309
+      ],
+      "mean": 0.9843581368718982
+    },
+    {
+      "candidate": "+ how usual this hour is for the card",
+      "extra_features": [
+        "hour_share"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9847849222594992,
+        0.9852515155841438
+      ],
+      "mean": 0.9850182189218215
+    },
+    {
+      "candidate": "+ all three",
+      "extra_features": [
+        "amt_to_card_max",
+        "cat_share",
+        "hour_share"
+      ],
+      "val_pr_auc_by_seed": [
+        0.984354562467367,
+        0.9844400641695341
+      ],
+      "mean": 0.9843973133184505
+    }
+  ],
+  "kept": []
+}

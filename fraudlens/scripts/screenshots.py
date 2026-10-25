@@ -124,6 +124,9 @@ def main():
             settle(page)
             shot(page, "4_case_queue")
 
+            goto(page, "Card 360", 5000)
+            shot(page, "9_card_360")
+
             goto(page, "Monitoring", 5000)
             shot(page, "7_monitoring")
             goto(page, "Model report", 4000)

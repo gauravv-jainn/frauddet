@@ -17,6 +17,7 @@ from common import (
     get_metrics,
     get_settings,
     get_users,
+    get_watchlist,
     page_setup,
     sidebar_controls,
     sidebar_user,
@@ -34,7 +35,49 @@ else:
 me = username()
 users, keys, db = get_users(), get_api_keys(), get_db()
 
-t_users, t_keys, t_audit, t_system = st.tabs(["Users", "API keys", "Audit log", "System"])
+t_users, t_keys, t_watch, t_audit, t_system = st.tabs(["Users", "API keys", "Watchlists", "Audit log", "System"])
+
+# ----------------------------------------------------------------------------- watchlists
+with t_watch:
+    wl = get_watchlist()
+    st.caption(
+        "Blocked cards make every later transaction Critical (block). Watched merchants make transactions High "
+        "(analyst review). Cards are stored as SHA-256 hashes with a masked label; analysts can also add entries "
+        "from the case queue and Card 360."
+    )
+    w1, w2 = st.columns(2)
+    with w1, st.form("add_merchant", clear_on_submit=True):
+        mname = st.text_input("Merchant name (exact)")
+        mreason = st.text_input("Reason", value="chargebacks / confirmed fraud")
+        if st.form_submit_button("Watch merchant", type="primary") and mname.strip():
+            st.toast("Added" if wl.add_merchant(mname, mreason, actor=me) else "Already on the watchlist")
+            st.rerun()
+    with w2, st.form("add_card", clear_on_submit=True):
+        cnum = st.text_input("Card number", help="Only its hash and last four digits are stored")
+        creason = st.text_input("Reason ", value="reported stolen")
+        if st.form_submit_button("Block card", type="primary"):
+            digits = "".join(ch for ch in cnum if ch.isdigit())
+            if len(digits) < 12:
+                st.error("Enter the full card number (at least 12 digits).")
+            else:
+                st.toast("Blocked" if wl.add_card(int(digits), creason, actor=me) else "Already blocked")
+                st.rerun()
+    entries = wl.entries()
+    if entries.empty:
+        st.info("No active watchlist entries.")
+    else:
+        st.dataframe(entries.drop(columns=["active"]), hide_index=True, width="stretch")
+        r1, r2 = st.columns([2, 1])
+        rid = r1.selectbox(
+            "Remove entry",
+            entries["id"].tolist(),
+            format_func=lambda i: (
+                f"{entries.set_index('id').loc[i, 'kind']}: {entries.set_index('id').loc[i, 'label']}"
+            ),
+        )
+        if r2.button("Remove", key="wl_remove"):
+            wl.remove(int(rid), actor=me)
+            st.rerun()
 
 # ----------------------------------------------------------------------------- users
 with t_users:

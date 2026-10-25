@@ -78,6 +78,32 @@ MIGRATIONS: list[str] = [
     CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
     CREATE INDEX IF NOT EXISTS idx_audit_case ON audit(case_id);
     """,
+    # 3: watchlists (blocked cards by hash, watched merchants), case comments, decision data on cases
+    """
+    CREATE TABLE IF NOT EXISTS watchlist (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind      TEXT NOT NULL CHECK (kind IN ('card', 'merchant')),
+        value     TEXT NOT NULL,      -- sha256 of the card number, or the merchant name
+        label     TEXT,               -- what to show: masked card or merchant name
+        reason    TEXT,
+        added_by  TEXT,
+        added_at  TEXT NOT NULL,
+        active    INTEGER NOT NULL DEFAULT 1,
+        UNIQUE (kind, value)
+    );
+    CREATE TABLE IF NOT EXISTS case_comments (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        case_id  INTEGER NOT NULL REFERENCES cases(case_id) ON DELETE CASCADE,
+        author   TEXT NOT NULL,
+        at       TEXT NOT NULL,
+        text     TEXT NOT NULL
+    );
+    ALTER TABLE cases ADD COLUMN expected_loss REAL;
+    ALTER TABLE cases ADD COLUMN decision TEXT;
+    ALTER TABLE cases ADD COLUMN card_ref TEXT;
+    CREATE INDEX IF NOT EXISTS idx_comments_case ON case_comments(case_id);
+    CREATE INDEX IF NOT EXISTS idx_cases_card ON cases(card_ref);
+    """,
 ]
 
 

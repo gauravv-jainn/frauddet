@@ -79,9 +79,11 @@ def test_score_matches_offline_scores_with_db_key(client, db_key):
     body = r.json()
     assert body["request_id"] == "abc-123" and body["model_version"]
     assert len(body["results"]) == 2
-    for item, p in zip(body["results"], s["p"], strict=True):
+    for item, p, amt in zip(body["results"], s["p"], s["amt"], strict=True):
         assert item["probability"] == pytest.approx(p, abs=1e-12)
         assert item["band"] in {"Low", "Medium", "High", "Critical"}
+        assert item["decision"] in {"approve", "step_up", "review", "block"}
+        assert item["expected_loss"] == pytest.approx(p * amt, abs=1e-9)
         assert item["reasons"]
     from fraudkit.auth import ApiKeyStore
     import api.main as api

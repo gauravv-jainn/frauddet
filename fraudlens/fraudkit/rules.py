@@ -49,7 +49,42 @@ def _money(x: float) -> str:
     return f"€{x:,.2f}"
 
 
-def rule_hits(feat: pd.DataFrame, cfg: dict, ranges: dict | None = None) -> pd.DataFrame:
+# used when a limit is "auto" but the model artifacts predate auto-derived limits
+FALLBACK_AUTO = {
+    "review_amount": 2000.0,
+    "far_from_home_km": 500.0,
+    "spend_spike_ratio": 20.0,
+    "spend_spike_min_amount": 1500.0,
+}
+
+
+def resolve(cfg: dict, metrics: dict | None = None) -> dict:
+    """Replace "auto" limits by the values derived at training time (metrics.json -> rules_auto)."""
+    auto = (metrics or {}).get("rules_auto") or {}
+    out = dict(cfg)
+    for k, fallback in FALLBACK_AUTO.items():
+        if out.get(k) == "auto":
+            out[k] = float(auto.get(k, fallback))
+    return out
+
+
+def _watch_hits(feat: pd.DataFrame, watch: dict | None):
+    from .security import card_hash
+
+    cards = (watch or {}).get("cards") or set()
+    merchants = (watch or {}).get("merchants") or set()
+    card_hit = (
+        feat["cc_num"].map(card_hash).isin(cards) if cards and "cc_num" in feat else pd.Series(False, index=feat.index)
+    )
+    merch_hit = (
+        feat["merchant"].astype(str).isin(merchants)
+        if merchants and "merchant" in feat
+        else pd.Series(False, index=feat.index)
+    )
+    return card_hit, merch_hit
+
+
+def rule_hits(feat: pd.DataFrame, cfg: dict, ranges: dict | None = None, watch: dict | None = None) -> pd.DataFrame:
     """Vectorised: one boolean column per rule, aligned with ``feat``."""
     out = pd.DataFrame(index=feat.index)
     if not cfg.get("enabled", True):
@@ -71,6 +106,8 @@ def rule_hits(feat: pd.DataFrame, cfg: dict, ranges: dict | None = None) -> pd.D
                 v = feat[f].astype(float)
                 oor |= (v > ranges[f]["max"]) | (v < ranges[f]["min"])
         out["out_of_range"] = oor
+    if watch:
+        out["card_blocked"], out["merchant_watchlist"] = _watch_hits(feat, watch)
     return out
 
 
@@ -81,6 +118,8 @@ RULE_BANDS = {
     "burst": "High",
     "far_from_home": "Medium",
     "out_of_range": "Medium",
+    "card_blocked": "Critical",
+    "merchant_watchlist": "High",
 }
 
 
@@ -100,13 +139,29 @@ def combine_band(model_band: str, rule_b: str) -> str:
     return max(model_band, rule_b, key=BAND_ORDER.index)
 
 
-def describe(row: pd.Series, cfg: dict, ranges: dict | None = None) -> list[RuleHit]:
+def describe(row: pd.Series, cfg: dict, ranges: dict | None = None, watch: dict | None = None) -> list[RuleHit]:
     """Plain-English rule hits for one transaction (features + context columns)."""
-    hits = rule_hits(row.to_frame().T, cfg, ranges)
+    hits = rule_hits(row.to_frame().T, cfg, ranges, watch)
     if hits.empty:
         return []
     h = hits.iloc[0]
     out = []
+    if h.get("card_blocked", False):
+        out.append(
+            RuleHit(
+                "card_blocked",
+                RULE_BANDS["card_blocked"],
+                "This card is blocked: an analyst confirmed fraud on it earlier",
+            )
+        )
+    if h.get("merchant_watchlist", False):
+        out.append(
+            RuleHit(
+                "merchant_watchlist",
+                RULE_BANDS["merchant_watchlist"],
+                f"Merchant '{row.get('merchant')}' is on the fraud watchlist",
+            )
+        )
     amt = float(row["amt"])
     if h.get("large_amount", False):
         out.append(
@@ -171,24 +226,37 @@ def describe(row: pd.Series, cfg: dict, ranges: dict | None = None) -> list[Rule
     return out
 
 
-def policy_flags(feat: pd.DataFrame, p: np.ndarray, threshold: float, cfg: dict, ranges: dict | None = None):
-    """Model flag OR rule flag, for evaluating the combined system on a whole dataset."""
-    hits = rule_hits(feat, cfg, ranges)
-    rule_any = hits.any(axis=1).to_numpy() if len(hits.columns) else np.zeros(len(feat), bool)
-    return (np.asarray(p) >= threshold) | rule_any, hits
+REVIEW_BANDS = ("High", "Critical")  # rule bands that send a transaction to an analyst (Medium = step-up only)
 
 
-def policy_impact(scored: pd.DataFrame, threshold: float, review_cost: float, cfg: dict, ranges: dict | None = None):
-    """Model alone vs model + policy rules on a labelled, scored dataset (e.g. the test set).
+def policy_flags(
+    feat: pd.DataFrame, p: np.ndarray, decision, cfg: dict, ranges: dict | None = None, watch: dict | None = None
+):
+    """Reviewed-or-blocked flags of the full system: model-side policy OR a High/Critical rule.
+
+    ``decision`` is a decision-policy dict (fraudkit/decision.py) or, for back-compatibility, a plain threshold.
+    """
+    from .decision import policy_flags as model_flags
+
+    is_policy = isinstance(decision, dict)
+    base = model_flags(p, feat["amt"].to_numpy(), decision) if is_policy else np.asarray(p) >= decision
+    hits = rule_hits(feat, cfg, ranges, watch)
+    strong = [c for c in hits.columns if RULE_BANDS[c] in REVIEW_BANDS]
+    rule_any = hits[strong].any(axis=1).to_numpy() if strong else np.zeros(len(feat), bool)
+    return base | rule_any, hits, base
+
+
+def policy_impact(scored: pd.DataFrame, decision, review_cost: float, cfg: dict, ranges: dict | None = None):
+    """Model policy alone vs model policy + rules on a labelled, scored dataset (e.g. the test set).
 
     Returns (summary DataFrame with one row per system, per-rule DataFrame with hits / frauds caught).
     """
     from .costs import confusion_at
 
     y, amt = scored["is_fraud"].to_numpy(), scored["amt"].to_numpy()
-    flags, hits = policy_flags(scored, scored["p"].to_numpy(), threshold, cfg, ranges)
+    flags, hits, model_flag = policy_flags(scored, scored["p"].to_numpy(), decision, cfg, ranges)
     rows = []
-    for name, f in [("Model alone", scored["p"].to_numpy() >= threshold), ("Model + policy rules", flags)]:
+    for name, f in [("Model policy alone", model_flag), ("Model policy + rules", flags)]:
         m = confusion_at(y, f.astype(float), amt, 0.5, review_cost)
         rows.append(
             {
@@ -211,7 +279,6 @@ def policy_impact(scored: pd.DataFrame, threshold: float, review_cost: float, cf
                 },
             }
         )
-    model_flag = scored["p"].to_numpy() >= threshold
     per_rule = []
     for col in hits.columns:
         h = hits[col].to_numpy()
@@ -219,10 +286,13 @@ def policy_impact(scored: pd.DataFrame, threshold: float, review_cost: float, cf
             {
                 "rule": col,
                 "band": RULE_BANDS[col],
+                "effect": "review" if RULE_BANDS[col] in REVIEW_BANDS else "step-up",
                 "hits": int(h.sum()),
                 "frauds_in_hits": int(y[h].sum()),
-                "extra_flags": int((h & ~model_flag).sum()),
-                "extra_frauds_caught": int((h & ~model_flag & (y == 1)).sum()),
+                "extra_reviews": int((h & ~model_flag).sum()) if RULE_BANDS[col] in REVIEW_BANDS else 0,
+                "extra_frauds_caught": int((h & ~model_flag & (y == 1)).sum())
+                if RULE_BANDS[col] in REVIEW_BANDS
+                else 0,
             }
         )
     return pd.DataFrame(rows), pd.DataFrame(per_rule)

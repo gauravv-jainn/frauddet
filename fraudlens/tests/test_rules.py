@@ -3,9 +3,18 @@
 import pandas as pd
 
 from fraudkit.config import Settings
-from fraudkit.rules import BAND_ORDER, combine_band, describe, policy_flags, rule_band, rule_hits
+from fraudkit.rules import (
+    BAND_ORDER,
+    FALLBACK_AUTO,
+    combine_band,
+    describe,
+    policy_flags,
+    resolve,
+    rule_band,
+    rule_hits,
+)
 
-CFG = Settings().rules.model_dump()
+CFG = resolve(Settings().rules.model_dump())  # "auto" limits -> fallback values (no training metrics here)
 RANGES = {"amt": {"min": 1.0, "max": 28949.0}, "dist_home_km": {"min": 0.0, "max": 151.0}}
 
 
@@ -55,8 +64,10 @@ def test_vectorised_rules_match_and_can_be_disabled():
     hits = rule_hits(df, CFG, RANGES)
     assert hits.any(axis=1).tolist() == [False, True, True, True, True]
     assert rule_band(hits).tolist() == ["", "High", "High", "High", "Medium"]
-    flags, _ = policy_flags(df, [0.0, 0.0, 0.0, 0.0, 0.9], threshold=0.5, cfg=CFG, ranges=RANGES)
-    assert flags.tolist() == [False, True, True, True, True]
+    flags, _, _ = policy_flags(df, [0.0, 0.0, 0.0, 0.0, 0.9], 0.5, CFG, RANGES)
+    assert flags.tolist() == [False, True, True, True, True]  # last row: model flag (Medium rule alone = step-up)
+    flags, _, _ = policy_flags(df.iloc[[4]], [0.0], 0.5, CFG, RANGES)
+    assert flags.tolist() == [False]
     assert rule_hits(df, {**CFG, "enabled": False}, RANGES).empty
     # the model's noisy speed flag alone (short jump) is not enough for the policy rule
     assert not rule_hits(pd.DataFrame([row(impossible_travel=1, prev_city_km=60.0)]), CFG, RANGES).any(axis=None)
@@ -77,3 +88,30 @@ def test_policy_escalates_in_explain_frame(fitted_model):
     assert e.model_band == plain.band
     assert e.summary.startswith(f"{e.band} risk by policy rule")
     assert e.one_line().startswith("Policy:")
+
+
+def test_auto_limits_resolve_from_training_metrics():
+    auto = {
+        "rules_auto": {
+            "review_amount": 1500.0,
+            "far_from_home_km": 400.0,
+            "spend_spike_ratio": 30.0,
+            "spend_spike_min_amount": 1000.0,
+        }
+    }
+    r = resolve(Settings().rules.model_dump(), auto)
+    assert (r["review_amount"], r["far_from_home_km"], r["spend_spike_ratio"]) == (1500.0, 400.0, 30.0)
+    assert resolve(Settings().rules.model_dump())["review_amount"] == FALLBACK_AUTO["review_amount"]
+
+
+def test_watchlists_block_card_and_flag_merchant():
+    from fraudkit.security import card_hash
+
+    df = pd.DataFrame([row(), row()])
+    df["cc_num"] = [4000123412341234, 4000999999999999]
+    df["merchant"] = ["Good Shop", "Bad Shop"]
+    watch = {"cards": {card_hash(4000123412341234)}, "merchants": {"Bad Shop"}}
+    hits = rule_hits(df, CFG, RANGES, watch)
+    assert hits["card_blocked"].tolist() == [True, False]
+    assert hits["merchant_watchlist"].tolist() == [False, True]
+    assert rule_band(hits).tolist() == ["Critical", "High"]

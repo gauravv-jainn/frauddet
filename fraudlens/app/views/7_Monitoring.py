@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -28,7 +29,7 @@ page_setup(
     "Computed month by month over the held-out test period.",
 )
 require_artifacts()
-thr, review_cost = sidebar_controls()
+pol = sidebar_controls()
 prof = get_reference_profile()
 if prof is None:
     st.warning(
@@ -54,10 +55,16 @@ def monthly_drift(key: str) -> pd.DataFrame:
 
 
 @st.cache_data(show_spinner=False)
-def weekly_performance(key: str, thr: float, review_cost: float) -> pd.DataFrame:
+def weekly_performance(key: str, pol_json: str) -> pd.DataFrame:
+    import json
+
+    from fraudkit.decision import policy_flags
+
+    pol = json.loads(pol_json)
     rows = []
     for week, g in scored.groupby(scored["trans_date_trans_time"].dt.to_period("W").dt.start_time):
-        m = confusion_at(g["is_fraud"], g["p"], g["amt"], thr, review_cost)
+        flags = policy_flags(g["p"].to_numpy(), g["amt"].to_numpy(), pol).astype(float)
+        m = confusion_at(g["is_fraud"], flags, g["amt"], 0.5, pol["review_cost"])
         rows.append(
             {
                 "week": week,
@@ -132,14 +139,14 @@ st.caption(
 )
 
 st.subheader("Model performance by week")
-perf = weekly_performance(model_key(), thr, review_cost)
+perf = weekly_performance(model_key(), json.dumps(pol, sort_keys=True))
 left, right = st.columns(2)
 with left:
     fig = px.line(
         perf,
         x="week",
         y=["precision", "recall"],
-        title="Precision and recall at the current threshold",
+        title="Precision and recall under the current policy",
         color_discrete_sequence=[BLUE, "#B91C1C"],
     )
     fig.update_layout(height=320, yaxis_tickformat=".0%", xaxis_title=None, yaxis_title=None, legend_title=None)

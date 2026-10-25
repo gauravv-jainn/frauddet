@@ -8,6 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from common import (
+    ACTION_LABELS,
     BAND_COLORS,
     allowed,
     explain_kw,
@@ -34,7 +35,8 @@ page_setup(
     permission="score",
 )
 require_artifacts()
-thr, review_cost = sidebar_controls()
+pol = sidebar_controls()
+thr = pol["threshold"]
 fm = get_model()
 max_rows = get_settings().app.max_upload_rows
 
@@ -102,13 +104,19 @@ def score_batch(
     out["risk"] = [e.probability for e in ex]
     out["band"] = [e.band for e in ex]
     out["model_band"] = [e.model_band for e in ex]
-    out["flagged"] = out["band"] != "Low"  # model flag (band >= Medium) OR any policy rule
+    out["decision"] = [e.decision for e in ex]
+    out["expected_loss"] = [e.expected_loss for e in ex]
+    out["flagged"] = [e.flagged for e in ex]  # reviewed or blocked (model policy OR a High/Critical rule)
     out["policy_rules"] = [" | ".join(h.text for h in e.rules) for e in ex]
     out["top_reason"] = [e.one_line() for e in ex]
     out["reasons"] = [[f"Policy: {h.text}" for h in e.rules] + [r.text for r in e.raising] for e in ex]
     out["action"] = [e.action for e in ex]
-    out["_rank"] = out["band"].map({"Critical": 3, "High": 2, "Medium": 1, "Low": 0})
-    return out.sort_values(["_rank", "risk"], ascending=False).drop(columns="_rank").reset_index(drop=True)
+    out["_rank"] = out["decision"].map({"block": 3, "review": 2, "step_up": 1, "approve": 0})
+    return (
+        out.sort_values(["_rank", "expected_loss", "risk"], ascending=False)
+        .drop(columns="_rank")
+        .reset_index(drop=True)
+    )
 
 
 res = score_batch(df, thr, model_key(), **explain_kw())
@@ -116,7 +124,7 @@ c = st.columns(5)
 c[0].metric("Rows scored", f"{len(res):,}")
 c[1].metric("Flagged", f"{int(res['flagged'].sum()):,}")
 c[2].metric("Amount flagged", f"€{res.loc[res['flagged'], 'amt'].sum():,.0f}")
-c[3].metric("Critical", f"{int((res['band'] == 'Critical').sum()):,}")
+c[3].metric("Blocked", f"{int((res['decision'] == 'block').sum()):,}", help="Critical risk or a blocked card")
 c[4].metric(
     "Raised by policy",
     f"{int((res['band'] != res['model_band']).sum()):,}",
@@ -125,7 +133,21 @@ c[4].metric(
 
 show = res.drop(columns=["reasons", "policy_rules"]).copy()
 show["card"] = show["cc_num"].map(mask_card)
-show = show[["risk", "band", "top_reason", "amt", "category", "trans_date_trans_time", "card", "merchant", "action"]]
+show["decision"] = show["decision"].map(ACTION_LABELS)
+show = show[
+    [
+        "decision",
+        "risk",
+        "expected_loss",
+        "band",
+        "top_reason",
+        "amt",
+        "category",
+        "trans_date_trans_time",
+        "card",
+        "merchant",
+    ]
+]
 st.dataframe(
     show.style.map(lambda b: f"color: {BAND_COLORS.get(b, '#0F172A')}; font-weight: 600", subset=["band"]),
     width="stretch",
@@ -133,6 +155,7 @@ st.dataframe(
     hide_index=True,
     column_config={
         "risk": st.column_config.ProgressColumn("Model risk", format="%.3f", min_value=0.0, max_value=1.0),
+        "expected_loss": st.column_config.NumberColumn("Expected loss (€)", format="%.2f"),
         "trans_date_trans_time": st.column_config.DatetimeColumn("Time", format="YYYY-MM-DD HH:mm"),
         "amt": st.column_config.NumberColumn("Amount", format="%.2f"),
         "top_reason": st.column_config.TextColumn("Main reason", width="large"),
@@ -168,6 +191,8 @@ if allowed("feed_queue") and d2.button(f"Send {n_flag} flagged rows to the case 
             source="batch",
             actor=username(),
             model_version=version,
+            expected_loss=r.expected_loss,
+            decision=r.decision,
         )
         added += cid is not None
     st.success(f"Added {added} new case(s) to the queue ({n_flag - added} were already queued).")

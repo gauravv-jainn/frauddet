@@ -166,11 +166,46 @@ step is appended to `artifacts/training_log.jsonl`. Everything is seeded and Lig
 6. **What-if** re-scores the same transaction with a different amount, hour or merchant distance, recomputing the
    history features against the card's real past.
 
+## Decision policy: flat threshold or expected loss
+
+`fraudkit/decision.py` turns the calibrated probability into one of four actions: **approve**, **step-up**
+(the cardholder verifies), **review** (analyst) or **block**. Two policies are evaluated on validation:
+- **flat threshold:** review when p >= 0.0238;
+- **expected loss:** review when p x amount >= k x review cost, with k tuned on validation (k = 3).
+
+The cheaper one on validation is served (`decision.mode: auto`):
+
+| Policy | Validation cost | Test cost | Test recall |
+|---|---|---|---|
+| Flat threshold (served) | 8,838 | 28,734 | 96.4% |
+| Expected loss | 9,338 | 24,473 | 92.8% |
+
+On the test period expected loss would have been cheaper, but the choice is made on validation only; the sidebar
+lets you switch policy and see the effect live.
+
+Three card-profile features (amount vs the card's previous maximum, category share, hour share) were tested in a
+two-seed validation ablation (`scripts/feature_ablation.py`, `artifacts/feature_ablation.json`). None beat the seed
+noise, so they are used for explanations, rules and Card 360, not as model inputs.
+
+## Analyst workflow
+
+- **Case queue:** board view (New, In progress, Escalated, Closed) and table view with bulk actions. Cases are
+  prioritised by expected loss, with an SLA timer (`decision.sla_hours`) and overdue flags, comments, and a full
+  audit trail.
+- **Card 360:** the card's transactions over time, a map of where it is used versus home, spend by category, usual
+  hours, recent activity and its cases.
+- **Watchlists:** confirming fraud blocks the card (stored as a SHA-256 hash), so later transactions are blocked by a
+  rule. Analysts can also watch a merchant (its transactions go to review). Admins manage both lists.
+- **Notifications:** the sidebar inbox shows cases assigned to you and how many are past the SLA.
+
 ## Policy rules (guardrail for model blind spots)
 
 A model only learns what is in its data. In this simulated dataset every fraud is at most about €1,400 and every
 merchant is within about 150 km of home. A €12,000 purchase 2,500 km away therefore scores 0.0% with the model alone.
-FraudLens adds configurable policy rules (`configs/default.yaml -> rules`, `fraudkit/rules.py`):
+FraudLens adds policy rules (`configs/default.yaml -> rules`, `fraudkit/rules.py`). The limits are `auto` by default:
+derived from the data at training time (review amount €2,000, far from home 400 km),
+and the spending-spike rule is tuned on validation (50x and €2,000).
+The rules cover:
 - large amount, extreme spending spike, far from home, long-distance impossible travel, transaction burst;
 - any key feature outside the range seen in training.
 
@@ -250,7 +285,7 @@ Full training run: 1235 s on 32 CPU threads (Windows-10-10.0.26200-SP0).
 | ![Sign in](docs/screenshots/0_login.png) | ![Dashboard](docs/screenshots/1_dashboard.png) |
 | ![What-if](docs/screenshots/2b_what_if.png) | ![Batch scoring](docs/screenshots/3_batch_scoring.png) |
 | ![Case queue](docs/screenshots/4_case_queue.png) | ![Monitoring](docs/screenshots/7_monitoring.png) |
-| ![Model report](docs/screenshots/5_model_report.png) | ![Admin](docs/screenshots/8_admin.png) |
+| ![Model report](docs/screenshots/5_model_report.png) | ![Card 360](docs/screenshots/9_card_360.png) |
 
 ## Limitations (read before showing to a client)
 

@@ -8,7 +8,10 @@ import pandas as pd
 import streamlit as st
 
 from common import (
+    action_badge,
     allowed,
+    decisions_vector,
+    open_card,
     band_chip,
     card_history,
     explain_kw,
@@ -25,23 +28,27 @@ from common import (
 )
 from fraudkit.explain import destination, explain_frame, whatif
 from fraudkit.features import featurize_with_history
+from fraudkit.decision import describe_policy
 from fraudkit.security import esc
 
 page_setup("Check a transaction", "Calibrated risk, the reasons behind it, and what would change the decision.")
 require_artifacts()
-thr, review_cost = sidebar_controls()
+pol = sidebar_controls()
+thr = pol["threshold"]
 fm, scored = get_model(), get_scored()
 bounds = fm.band_bounds(thr)
+dec_all = decisions_vector(scored, pol)
+flag_all = (dec_all == "review") | (dec_all == "block")
 
 
-def show(e, truth: int | None = None, key: str = "main"):
+def show(e, truth: int | None = None, key: str = "main", cc_num=None):
     c1, c2 = st.columns([1, 1.3])
     with c1:
         st.plotly_chart(gauge(e.probability, thr, bounds), width="stretch", key=f"gauge_{key}")
     with c2:
         st.markdown(
-            f"{band_chip(e.band)} &nbsp; <b>{e.probability:.2%}</b> calibrated model probability "
-            f"<span class='fl-muted'>(flag threshold {thr:.2%})</span>",
+            f"{action_badge(e.decision)} &nbsp; {band_chip(e.band)} &nbsp; <b>{e.probability:.2%}</b> calibrated "
+            f"probability &middot; expected loss <b>{money(e.expected_loss, 2)}</b>",
             unsafe_allow_html=True,
         )
         if e.escalated:
@@ -52,12 +59,17 @@ def show(e, truth: int | None = None, key: str = "main"):
             )
         st.markdown(f"<p style='margin-top:10px'>{esc(e.summary)}</p>", unsafe_allow_html=True)
         st.markdown(f"<div class='fl-action'><b>Recommended action:</b> {esc(e.action)}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='fl-muted' style='margin-top:6px'>{esc(describe_policy(pol))}</div>", unsafe_allow_html=True
+        )
         if truth is not None:
             st.markdown(
                 f"<p class='fl-muted' style='margin-top:8px'>Ground truth label in the dataset: "
                 f"<b>{'fraud' if truth else 'genuine'}</b></p>",
                 unsafe_allow_html=True,
             )
+        if cc_num is not None and st.button("Open card 360", key=f"card360_{key}", icon=":material/credit_card:"):
+            open_card(cc_num)
     if e.rules:
         st.markdown("**Policy rules triggered**")
         st.markdown(rule_cards(e.rules), unsafe_allow_html=True)
@@ -77,11 +89,9 @@ mode = st.radio("Source", modes, horizontal=True, label_visibility="collapsed")
 if mode == "Pick a real test transaction":
     lists = {
         "Highest risk": scored.nlargest(300, "p"),
-        "Fraud caught by the model": scored[(scored["is_fraud"] == 1) & (scored["p"] >= thr)].nlargest(300, "amt"),
-        "Fraud missed by the model": scored[(scored["is_fraud"] == 1) & (scored["p"] < thr)].nlargest(300, "amt"),
-        "False alarms (genuine but flagged)": scored[(scored["is_fraud"] == 0) & (scored["p"] >= thr)].nlargest(
-            300, "p"
-        ),
+        "Fraud caught by the policy": scored[(scored["is_fraud"] == 1) & flag_all].nlargest(300, "amt"),
+        "Fraud missed by the policy": scored[(scored["is_fraud"] == 1) & ~flag_all].nlargest(300, "amt"),
+        "False alarms (genuine but flagged)": scored[(scored["is_fraud"] == 0) & flag_all].nlargest(300, "p"),
         "Random genuine": scored[scored["is_fraud"] == 0].sample(300, random_state=7),
     }
     f1, f2 = st.columns([1, 2])
@@ -107,7 +117,7 @@ if mode == "Pick a real test transaction":
         unsafe_allow_html=True,
     )
     st.write("")
-    show(e, truth=int(r.is_fraud))
+    show(e, truth=int(r.is_fraud), cc_num=r.cc_num)
 
     st.divider()
     st.subheader("What-if")

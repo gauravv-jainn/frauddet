@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 
 from .features import FEATURES, haversine_km
+from .decision import ACTION_TEXT, decide
 from .rules import combine_band
 from .rules import describe as describe_rules
 from .score import ACTIONS, FraudModel
@@ -65,6 +66,15 @@ class Explanation:
     contributions: dict  # feature -> SHAP (log-odds)
     model_band: str = ""  # band from the model alone; ``band`` is after policy rules
     rules: list = field(default_factory=list)  # RuleHit list (policy guardrails that fired)
+    decision: str = ""  # approve | step_up | review | block (when a decision policy is given)
+    expected_loss: float = 0.0  # calibrated probability x amount
+
+    @property
+    def flagged(self) -> bool:
+        """Sent to an analyst or blocked (the transactions that cost a review)."""
+        if self.decision:
+            return self.decision in ("review", "block")
+        return self.band != "Low"
 
     def to_dict(self):
         return asdict(self)
@@ -305,7 +315,7 @@ def explain_frame(
         row = rows.iloc[i]
         up, down = build_reasons(contrib, row, fm, top_raising, top_lowering)
         model_band = str(bands[i])
-        hits = describe_rules(row, policy["rules"], policy.get("ranges")) if policy else []
+        hits = describe_rules(row, policy["rules"], policy.get("ranges"), policy.get("watch")) if policy else []
         final = model_band
         for h in hits:
             final = combine_band(final, h.band)
@@ -321,12 +331,29 @@ def explain_frame(
                     else "."
                 )
             )
+        action, decision, el = ACTIONS[final], "", float(p[i]) * float(row["amt"])
+        if policy and policy.get("decision"):
+            rule_b = ""
+            for h in hits:
+                rule_b = combine_band(rule_b or "Low", h.band)
+            decision, el = decide(
+                float(p[i]), float(row["amt"]), model_band, rule_b if hits else "", policy["decision"]
+            )
+            action = ACTION_TEXT[decision]
+            pol = policy["decision"]
+            if pol["mode"] == "expected_loss" and decision in ("approve", "step_up") and model_band != "Low":
+                summary += (
+                    f" Expected loss {_money(el)} is below the review bar of "
+                    f"{_money(pol['k'] * pol['review_cost'])}, so the cardholder verifies instead."
+                )
+            elif pol["mode"] == "expected_loss" and decision == "review" and not hits:
+                summary += f" Expected loss {_money(el)} justifies an analyst review."
         out.append(
             Explanation(
                 probability=float(p[i]),
                 raw_probability=float(p_raw[i]),
                 band=final,
-                action=ACTIONS[final],
+                action=action,
                 summary=summary,
                 raising=up,
                 lowering=down,
@@ -334,6 +361,8 @@ def explain_frame(
                 contributions=contrib,
                 model_band=model_band,
                 rules=hits,
+                decision=decision,
+                expected_loss=el,
             )
         )
     return out

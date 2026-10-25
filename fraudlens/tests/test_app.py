@@ -119,7 +119,7 @@ def test_expired_session_is_logged_out(users):
 # ----------------------------------------------------------------------------- pages
 def test_dashboard_matches_metrics_json(users):
     at = run_page("1_Dashboard.py", "viewer")
-    m = json.loads((ART / "metrics.json").read_text())["test"]["at_threshold"]
+    m = json.loads((ART / "metrics.json").read_text())["test"]["at_policy"]  # served decision policy
     assert metric(at, "Transactions scored") == f"{m['transactions']:,}"
     assert metric(at, "Flagged") == f"{m['flagged']:,}"
     assert metric(at, "Precision") == f"{m['precision']:.1%}"
@@ -133,6 +133,7 @@ def test_app_numbers_equal_metrics_exactly():
 
     sys.path.insert(0, str(ROOT))
     from fraudkit.costs import confusion_at
+    from fraudkit.decision import policy_flags, serving_policy
 
     metrics = json.loads((ART / "metrics.json").read_text())
     scored = pd.read_parquet(ART / "test_scored.parquet")
@@ -144,6 +145,10 @@ def test_app_numbers_equal_metrics_exactly():
         metrics["threshold"]["review_cost"],
     )
     assert got == metrics["test"]["at_threshold"]
+    pol = serving_policy(metrics)
+    flags = policy_flags(scored["p"].to_numpy(), scored["amt"].to_numpy(), pol).astype(float)
+    got = confusion_at(scored["is_fraud"], flags, scored["amt"], 0.5, pol["review_cost"])
+    assert got == metrics["test"]["at_policy"]
 
 
 def test_check_transaction_whatif_and_manual(users):
@@ -179,11 +184,25 @@ def test_case_queue_flow_records_actor(users, temp_db):
     at = run_page("4_Case_Queue.py", "analyst")
     button(at, "Add top 25 by risk").click().run()
     assert not at.exception, [e.value for e in at.exception]
-    assert str(metric(at, "Cases")) == "25"
+    assert str(metric(at, "Open")) == "25"
     button(at, "Assign to me").click().run()
     button(at, "Confirm fraud").click().run()
     assert not at.exception, [e.value for e in at.exception]
     assert str(metric(at, "Confirmed")) == "1"
+    # confirming fraud blocked the card (config rules.block_confirmed_cards)
+    import sys
+
+    sys.path.insert(0, str(ROOT))
+    from fraudkit.db import Database
+    from fraudkit.watchlist import WatchlistStore
+
+    assert len(WatchlistStore(Database(temp_db)).active_sets()["cards"]) == 1
+    # comment + table view with a bulk action
+    next(t for t in at.text_input if t.label == "Add a comment").set_value("Customer confirmed by phone")
+    button(at, "Post comment").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    at.segmented_control(key="queue_view").set_value("Table").run()
+    assert not at.exception, [e.value for e in at.exception]
     import sqlite3
 
     with sqlite3.connect(temp_db) as c:
@@ -202,6 +221,16 @@ def test_viewer_cannot_change_cases(users):
     viewer = run_page("4_Case_Queue.py", "viewer")
     labels = {b.label for b in viewer.button}
     assert not labels & {"Confirm fraud", "Mark genuine", "Escalate", "Add top 25 by risk", "Start demo stream"}
+
+
+def test_card_360(users):
+    at = run_page("10_Card_360.py", "analyst")
+    assert int(str(metric(at, "Transactions")).replace(",", "")) > 0
+    button(at, "Block card").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("Blocked" in md.value for md in at.markdown)
+    button(at, "Unblock card").click().run()
+    assert not at.exception, [e.value for e in at.exception]
 
 
 def test_monitoring_page(users):
@@ -235,6 +264,20 @@ def test_admin_creates_user_and_api_key(users):
     assert any(c.value.startswith("fl_") for c in at.code)
 
 
+def test_admin_watchlist(users, temp_db):
+    at = run_page("8_Admin.py", "admin")
+    next(t for t in at.text_input if t.label == "Merchant name (exact)").set_value("Suspicious Shop")
+    button(at, "Watch merchant").click().run()
+    assert not at.exception, [e.value for e in at.exception]
+    import sys
+
+    sys.path.insert(0, str(ROOT))
+    from fraudkit.db import Database
+    from fraudkit.watchlist import WatchlistStore
+
+    assert WatchlistStore(Database(temp_db)).active_sets()["merchants"] == {"Suspicious Shop"}
+
+
 def test_admin_page_denied_to_analyst(users):
     at = run_page("8_Admin.py", "analyst")
     assert any("does not have access" in i.value for i in at.info)
@@ -249,13 +292,13 @@ def test_account_page(users):
 def test_sidebar_settings_survive_page_switches(users):
     """Regression: Streamlit drops widget state when navigation re-creates a widget; the settings must persist."""
     at = run_page("1_Dashboard.py", "analyst")
+    at.checkbox[0].uncheck().run()  # custom policy
     cost = next(n for n in at.number_input if n.label.startswith("Review cost"))
     cost.set_value(12.0).run()
-    at.checkbox[0].uncheck().run()
     at.session_state["w_review_cost"] = 0.0  # what a page switch does: the widget comes back at its default
     at.session_state["w_use_validated"] = True
     at.run()
     assert not at.exception
     assert next(n for n in at.number_input if n.label.startswith("Review cost")).value == 12.0
     assert at.checkbox[0].value is False
-    assert any("Custom threshold or review cost" in c.value for c in at.caption)
+    assert any("Custom policy or filters" in c.value for c in at.caption)
