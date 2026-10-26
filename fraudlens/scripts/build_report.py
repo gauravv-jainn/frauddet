@@ -230,6 +230,21 @@ ex_missed = explain_frame(fm, missed_row, thr)[0] if len(missed_row) else None
 # --------------------------------------------------------------------------- tables
 lb_t = pd.DataFrame(m["leaderboard"])[["model", "pr_auc", "roc_auc", "brier", "fit_seconds", "selected"]]
 lb_t["selected"] = lb_t["selected"].map({True: "selected", False: ""})
+CAL_TABLE = (
+    table(
+        pd.DataFrame(cal["comparison"]).assign(
+            chosen=lambda d: d["method"].eq(cal["method"]).map({True: "yes", False: ""})
+        ),
+        {
+            "log_loss": lambda v: f"{v:.5f}",
+            "brier": lambda v: f"{v:.6f}",
+            "share_at_floor": lambda v: f"{v:.1%}",
+            "distinct_values": lambda v: f"{v:,}",
+        },
+    )
+    if cal.get("comparison")
+    else ""
+)
 LB_TABLE = table(
     lb_t,
     {
@@ -275,6 +290,19 @@ FEATURE_DOC = {
     "impossible_travel": ("1 if that speed > 800 km/h and the jump > 50 km", "geo"),
     "first_time_category": ("1 if the card never bought in this category before", "behaviour"),
     "n_txn_30d": ("Card's transactions in the previous 30 days (replaced the lifetime counter)", "velocity"),
+    "n_txn_7d": (
+        "Card's transactions in the previous 7 days (RFM window, Fraud Detection Handbook)",
+        "spending window",
+    ),
+    "avg_amt_1d": ("Card's average amount over the previous day", "spending window"),
+    "avg_amt_7d": ("Card's average amount over the previous 7 days", "spending window"),
+    "avg_amt_30d": ("Card's average amount over the previous 30 days", "spending window"),
+    "amt_to_avg_30d": (
+        "Amount / card's 30-day average ('a €5,000 purchase is suspicious if the average is €35')",
+        "spending window",
+    ),
+    "amt_log_z": ("z-score of log(1 + amount) against the card's own history", "behaviour"),
+    "small_txn_24h": ("Card's charges under €5 in the previous 24 hours (card-testing probes)", "card testing"),
     "category": ("Merchant category (14 values), native categorical in LightGBM", "categorical"),
     "gender": ("Cardholder gender (as in the dataset)", "categorical"),
 }
@@ -325,7 +353,7 @@ ALGOS = pd.DataFrame(
             "Turns 693 merchant names into one number without leaking labels",
         ),
         (
-            "Isotonic regression (Platt fallback)",
+            "Beta / Platt / isotonic calibration (chosen out of sample)",
             "Probability calibration",
             "fraudkit/score.py (Calibrator)",
             "Makes 30% mean ~30%; needed for money decisions",
@@ -442,8 +470,9 @@ QA = [
     ),
     (
         "What is calibration and why is it needed?",
-        f"Raw model scores are not true probabilities (especially after subsampling). Isotonic regression, fitted on the "
-        f"validation set, maps scores to probabilities that match observed frequencies. Test Brier score went from "
+        f"Raw model scores are not true probabilities (especially after subsampling). A calibrator fitted on the "
+        f"validation set ({cal['method']}, chosen by out-of-sample log-loss) maps scores to probabilities that match "
+        f"observed frequencies. Test Brier score went from "
         f"{te['brier_before_calibration']:.5f} to {te['brier_after_calibration']:.5f}. Calibrated probabilities are "
         "required to compare expected loss with review cost.",
     ),
@@ -536,6 +565,26 @@ QA = [
         "Confirming fraud blocks the card (stored as a SHA-256 hash), so later transactions on it are blocked by a "
         "rule; merchants can be put on a watchlist. Decisions are also the labelled data for the next model, but here "
         "they come from the test period, so they are not fed back into this model.",
+    ),
+    (
+        "Why did the first version show only 0% or 100%?",
+        "Its calibrator was isotonic regression, a step function: about 95% of test transactions landed on the "
+        "bottom step (exactly 0%) and the riskiest on the top step (100%), only 94 distinct values in total. The "
+        "model's ranking was fine; the calibrator threw the resolution away. Now three calibrators are compared out "
+        f"of sample and {cal['method']} is used, giving {te.get('distinct_probabilities', 0):,} distinct values.",
+    ),
+    (
+        "What is the risk score 0-999?",
+        "A readable scale over the calibrated probability, like a credit score: log-odds mapped so p = 0.000001 is "
+        "0 and p = 0.999 is 999, and about 33 points always doubles the odds of fraud. Decisions still use the "
+        "probability; the score just spreads the very small and very large probabilities so they can be compared.",
+    ),
+    (
+        "Where did the new features come from?",
+        "From the fraud literature: RFM-style spending windows over 1, 7 and 30 days (Fraud Detection Handbook), a "
+        "z-score of the amount against the card's own history, card-testing probes (small charges under 5 before a "
+        "large one), merchant velocity and merchant/category fraud risk with a 7-day label delay. Each group was "
+        "tested on validation; the simplest set that matched the best score was kept.",
     ),
     (
         "What would you do next?",
@@ -727,10 +776,18 @@ rows; calibration later fixes the probability scale.</p>
 period and returns the mean PR-AUC. TPE models good and bad regions of the search space and samples where good
 results are likely.</p>
 {table(SPACE)}
-<h3>4.5 Calibration: isotonic regression</h3>
-<p>A monotone, step-wise mapping from raw score to probability, fitted on the validation period
-({cal["validation_positives"]:,} frauds; Platt scaling is used if fewer than 300). Monotone means the ranking, and so
-PR-AUC, is unchanged; only the probability values become trustworthy.</p>
+<h3>4.5 Calibration: three methods compared out of sample</h3>
+<p>Three calibrators are fitted on one time-half of the validation period and scored on the other (both ways):
+<b>isotonic regression</b> (a monotone step function), <b>Platt scaling</b> (logistic regression on the logit of the
+score) and <b>beta calibration</b> (logistic regression on log(p) and -log(1-p), Kull et al. 2017). The one with the
+lowest out-of-sample log-loss is used. Log-loss punishes confident mistakes, so a calibrator that outputs exactly 0%
+or 100% is penalised.</p>
+{CAL_TABLE}
+<p>Why this matters: the first version used isotonic regression. Being a step function, it gave about 95% of test
+transactions exactly 0% and the riskiest exactly 100%, with only 94 distinct values for 555,719 transactions, so
+scores looked binary and the expected-loss policy (probability x amount) collapsed to 0 for most transactions. A
+smooth calibrator keeps the model's full ranking: {te.get("distinct_probabilities", 0):,} distinct probabilities on
+the test set now.</p>
 <h3>4.6 Cost-optimal threshold</h3>
 <p>For every possible threshold on validation: cost = missed fraud amount + {at["review_cost"]:.0f} x flagged count.
 The minimum is at <b>{thr:.4f}</b>. Risk bands: Medium starts at the threshold, High at {cfg.bands.high}, Critical at
@@ -778,7 +835,9 @@ sections.append(f"""
 {
     kv(
         [
-            ("Calibration method", cal["method"]),
+            ("Calibration method", f"{cal['method']} ({cal.get('chosen_by', 'validation')})"),
+            ("Distinct probabilities on test", f"{te.get('distinct_probabilities', 0):,} of {len(scored):,}"),
+            ("Test log-loss (calibrated)", f"{te.get('log_loss_calibrated', float('nan')):.5f}"),
             (
                 "Brier score on validation (before -> after, fitted there)",
                 f"{cal['validation_brier_before']:.5f} -> {cal['validation_brier_after']:.5f}",
@@ -1039,6 +1098,24 @@ sections.append("""
 <tr><td>PSI</td><td>Population Stability Index: how much a distribution moved since training.</td></tr>
 <tr><td>Target encoding</td><td>Replacing a category by the (smoothed) label rate of that category.</td></tr>
 </tbody></table>""")
+
+sections.append("""
+<h2>15. Sources for the feature research</h2>
+<ul>
+<li>Fraud Detection Handbook, baseline feature transformation (RFM windows, terminal risk with delay):
+https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_3_GettingStarted/BaselineFeatureTransformation.html</li>
+<li>Towards automated feature engineering for credit card fraud detection using multi-perspective HMMs (amount and
+elapsed time as key signals): https://arxiv.org/pdf/1909.01185</li>
+<li>Transaction velocity counting for fraud detection, US patent 8041620:
+https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/8041620</li>
+<li>Real-time feature engineering for fraud detection (fresh velocity features): https://risingwave.com/blog/real-time-feature-engineering-fraud-detection</li>
+<li>Temporian tutorial, payment card fraud (terminal risk, label lag): https://temporian.readthedocs.io/en/latest/tutorials/bank_fraud_detection_with_tfdf/</li>
+<li>Card testing fraud patterns: https://www.chargebackgurus.com/blog/card-testing-fraud and https://www.fraudlogix.com/?p=17109</li>
+<li>Development of new methods for detection and control of credit card fraud attacks (circular time):
+https://arxiv.org/pdf/2503.20477</li>
+<li>Kull, Silva Filho, Flach (2017), Beta calibration: a well-founded and easily implemented improvement on logistic
+calibration for binary classifiers (AISTATS).</li>
+</ul>""")
 
 doc = f"<!doctype html><html><head><meta charset='utf-8'><style>{css}</style></head><body>{''.join(sections)}</body></html>"
 

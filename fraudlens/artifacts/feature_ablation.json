@@ -50,18 +50,146 @@
       "mean": 0.9850182189218215
     },
     {
-      "candidate": "+ all three",
+      "candidate": "+ spending windows (RFM)",
       "extra_features": [
-        "amt_to_card_max",
-        "cat_share",
-        "hour_share"
+        "n_txn_7d",
+        "avg_amt_1d",
+        "avg_amt_7d",
+        "avg_amt_30d",
+        "amt_to_avg_30d"
       ],
       "val_pr_auc_by_seed": [
-        0.984354562467367,
-        0.9844400641695341
+        0.985595988278755,
+        0.9852852652933727
       ],
-      "mean": 0.9843973133184505
+      "mean": 0.9854406267860638
+    },
+    {
+      "candidate": "+ amount z-score vs card history",
+      "extra_features": [
+        "amt_log_z"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9851469514619308,
+        0.9849072904411652
+      ],
+      "mean": 0.985027120951548
+    },
+    {
+      "candidate": "+ card-testing probes",
+      "extra_features": [
+        "small_txn_24h"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9857376788112576,
+        0.9859148406892132
+      ],
+      "mean": 0.9858262597502354
+    },
+    {
+      "candidate": "+ weekend + circular hour",
+      "extra_features": [
+        "is_weekend",
+        "hour_sin",
+        "hour_cos"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9834679996502834,
+        0.9842832629023917
+      ],
+      "mean": 0.9838756312763375
+    },
+    {
+      "candidate": "+ merchant/category fraud risk (7-day label delay)",
+      "extra_features": [
+        "merch_risk_30d",
+        "cat_risk_30d"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9843156990401989,
+        0.9843854444110501
+      ],
+      "mean": 0.9843505717256245
+    },
+    {
+      "candidate": "+ merchant velocity",
+      "extra_features": [
+        "merch_txn_1h",
+        "merch_txn_24h"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9842752108362889,
+        0.9845481584227945
+      ],
+      "mean": 0.9844116846295417
+    },
+    {
+      "candidate": "+ all research groups",
+      "extra_features": [
+        "n_txn_7d",
+        "avg_amt_1d",
+        "avg_amt_7d",
+        "avg_amt_30d",
+        "amt_to_avg_30d",
+        "amt_log_z",
+        "small_txn_24h",
+        "is_weekend",
+        "hour_sin",
+        "hour_cos",
+        "merch_risk_30d",
+        "cat_risk_30d",
+        "merch_txn_1h",
+        "merch_txn_24h"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9864732373350794,
+        0.9862857289448038
+      ],
+      "mean": 0.9863794831399416
+    },
+    {
+      "candidate": "+ all research groups except weekend/hour",
+      "extra_features": [
+        "n_txn_7d",
+        "avg_amt_1d",
+        "avg_amt_7d",
+        "avg_amt_30d",
+        "amt_to_avg_30d",
+        "amt_log_z",
+        "small_txn_24h",
+        "merch_risk_30d",
+        "cat_risk_30d",
+        "merch_txn_1h",
+        "merch_txn_24h"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9863062566851952,
+        0.9862310731980994
+      ],
+      "mean": 0.9862686649416473
+    },
+    {
+      "candidate": "+ spending windows + z-score + card testing",
+      "extra_features": [
+        "n_txn_7d",
+        "avg_amt_1d",
+        "avg_amt_7d",
+        "avg_amt_30d",
+        "amt_to_avg_30d",
+        "amt_log_z",
+        "small_txn_24h"
+      ],
+      "val_pr_auc_by_seed": [
+        0.9861894302693309,
+        0.9865538963673202
+      ],
+      "mean": 0.9863716633183255
     }
   ],
-  "kept": []
+  "kept": [
+    "+ card-testing probes",
+    "+ all research groups",
+    "+ all research groups except weekend/hour",
+    "+ spending windows + z-score + card testing"
+  ]
 }

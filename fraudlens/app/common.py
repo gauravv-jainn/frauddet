@@ -597,29 +597,36 @@ def reason_cards(reasons, kind: str) -> str:
     return "".join(out)
 
 
-def gauge(p: float, threshold: float, bounds: dict) -> go.Figure:
+def gauge(score: int, threshold_score: int, bound_scores: dict) -> go.Figure:
+    """Risk score gauge (0-999). Band colours mark where Medium / High / Critical probabilities fall on the scale."""
     steps = [
-        dict(range=[0, bounds["medium"] * 100], color="#DCFCE7"),
-        dict(range=[bounds["medium"] * 100, bounds["high"] * 100], color="#FEF9C3"),
-        dict(range=[bounds["high"] * 100, bounds["critical"] * 100], color="#FFEDD5"),
-        dict(range=[bounds["critical"] * 100, 100], color="#FEE2E2"),
+        dict(range=[0, bound_scores["medium"]], color="#DCFCE7"),
+        dict(range=[bound_scores["medium"], bound_scores["high"]], color="#FEF9C3"),
+        dict(range=[bound_scores["high"], bound_scores["critical"]], color="#FFEDD5"),
+        dict(range=[bound_scores["critical"], 999], color="#FEE2E2"),
     ]
     fig = go.Figure(
         go.Indicator(
             mode="gauge+number",
-            value=p * 100,
-            number=dict(suffix="%", valueformat=".1f"),
+            value=score,
+            number=dict(valueformat="d"),
             gauge=dict(
-                axis=dict(range=[0, 100], ticksuffix="%"),
+                axis=dict(range=[0, 999], tickvals=[0, 250, 500, 750, 999]),
                 bar=dict(color="#0F172A", thickness=0.25),
                 steps=steps,
-                threshold=dict(line=dict(color=BLUE, width=3), thickness=0.85, value=threshold * 100),
+                threshold=dict(line=dict(color=BLUE, width=3), thickness=0.85, value=threshold_score),
             ),
-            title=dict(text="Calibrated fraud probability", font=dict(size=14)),
+            title=dict(text="Risk score (0-999)", font=dict(size=14)),
         )
     )
     fig.update_layout(height=250, margin=dict(l=40, r=40, t=50, b=10))
     return fig
+
+
+def score_bounds(fm, threshold: float) -> tuple[int, dict]:
+    b = fm.band_bounds(threshold)
+    sc = {k: int(fm.risk_score(v)[0]) for k, v in b.items()}
+    return int(fm.risk_score(threshold)[0]), sc
 
 
 # (section, path, title, icon, permission needed to see the page in the navigation)

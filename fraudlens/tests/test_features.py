@@ -2,9 +2,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fraudkit.features import CONTEXT, FEATURES, MerchantEncoder, build_features, featurize_with_history, haversine_km
+from fraudkit.features import (
+    CONTEXT,
+    FEATURES,
+    RESEARCH_FEATURES,
+    MerchantEncoder,
+    build_features,
+    featurize_with_history,
+    haversine_km,
+)
 
-CARD_FEATURES = [f for f in FEATURES if f != "merchant_te"] + CONTEXT
+CARD_FEATURES = sorted(set([f for f in FEATURES if f != "merchant_te"] + CONTEXT + sum(RESEARCH_FEATURES.values(), [])))
 
 
 def _assert_rows_equal(a: pd.Series, b: pd.Series, i):
@@ -73,3 +81,17 @@ def test_merchant_encoder_oof_does_not_use_own_label():
     # full-fit mapping for unseen merchants falls back to the prior
     assert enc.transform(pd.Series(["zzz"]))[0] == pytest.approx(y.mean())
     assert np.isfinite(oof).all()
+
+
+def test_delayed_risk_ignores_recent_labels(toy):
+    """Merchant risk must not use labels younger than the label delay (they are not known yet in production)."""
+    from fraudkit.features import LABEL_DELAY_DAYS
+
+    base = build_features(toy)
+    flipped = toy.copy()
+    last = flipped["trans_date_trans_time"].max()
+    recent = flipped["trans_date_trans_time"] > last - pd.Timedelta(days=LABEL_DELAY_DAYS)
+    flipped.loc[recent, "is_fraud"] = 1 - flipped.loc[recent, "is_fraud"]
+    after = build_features(flipped)
+    np.testing.assert_allclose(after.loc[recent, "merch_risk_30d"], base.loc[recent, "merch_risk_30d"])
+    np.testing.assert_allclose(after.loc[recent, "cat_risk_30d"], base.loc[recent, "cat_risk_30d"])

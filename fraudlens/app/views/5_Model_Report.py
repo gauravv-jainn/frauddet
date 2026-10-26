@@ -157,6 +157,27 @@ with right:
         "curve; it is the training-time choice."
     )
 
+if cal.get("comparison"):
+    st.subheader("Calibration method (chosen out of sample)")
+    st.dataframe(
+        pd.DataFrame(cal["comparison"]).assign(
+            chosen=lambda d: d["method"].eq(cal["method"]).map({True: "chosen", False: ""})
+        ),
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "log_loss": st.column_config.NumberColumn("log-loss (out of sample)", format="%.5f"),
+            "brier": st.column_config.NumberColumn("Brier (out of sample)", format="%.6f"),
+            "distinct_values": st.column_config.NumberColumn("distinct probabilities"),
+            "share_at_floor": st.column_config.NumberColumn("share at 0", format="percent"),
+        },
+    )
+    st.caption(
+        f"{cal['chosen_by']}. Isotonic regression is a step function: it gives most transactions exactly the same "
+        "probability (0) and the riskiest exactly 1, which is why scores looked like 0% or 100%. Smooth methods keep "
+        f"the model's ranking. On test: {te.get('distinct_probabilities', 0):,} distinct probabilities."
+    )
+
 st.subheader("Decision policy: flat threshold vs expected loss")
 dec = m.get("decision")
 if not dec:

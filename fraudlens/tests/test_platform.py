@@ -105,3 +105,34 @@ def test_weighted_average_precision_matches_sklearn():
     assert average_precision_weighted(y[order], ends, np.ones_like(y)) == pytest.approx(
         average_precision_score(y, p), abs=1e-12
     )
+
+
+def test_calibrators_never_output_hard_0_or_1_and_smooth_ones_keep_ranking():
+    from fraudkit.score import P_MAX, P_MIN, Calibrator
+
+    rng = np.random.default_rng(3)
+    y = (rng.random(20_000) < 0.01).astype(int)
+    raw = np.clip(rng.beta(0.3, 30, 20_000) + y * rng.random(20_000) * 0.8, 1e-12, 1 - 1e-12)
+    for method in Calibrator.METHODS:
+        p = Calibrator(method).fit(raw, y).transform(raw)
+        assert p.min() >= P_MIN and p.max() <= P_MAX
+    order = np.argsort(raw)
+    for method in ("platt", "beta"):
+        p = Calibrator(method).fit(raw, y).transform(raw)
+        assert np.all(np.diff(p[order]) >= -1e-15)  # monotone: ranking (and PR-AUC) preserved
+        assert len(np.unique(p)) > 0.8 * len(np.unique(raw))  # no collapse into a few steps
+    iso = Calibrator("isotonic").fit(raw, y).transform(raw)
+    assert len(np.unique(iso)) < 200  # the step function that made scores look like 0% / 100%
+
+
+def test_risk_score_is_monotone_log_odds_scale():
+    from fraudkit.score import risk_score, score_points_to_double_odds
+
+    s = risk_score([0.0, 1e-6, 1e-4, 0.01, 0.0837, 0.5, 0.999, 1.0])
+    assert s.tolist() == sorted(s.tolist()) and s.min() == 0 and s.max() == 999
+    assert risk_score(1e-6)[0] == 0 and risk_score(0.999)[0] == 999
+    # doubling the odds adds a constant number of points (~33), like a credit score
+    pdo = score_points_to_double_odds()
+    odds = 0.01 / 0.99
+    p2 = 2 * odds / (1 + 2 * odds)
+    assert abs((risk_score(p2)[0] - risk_score(0.01)[0]) - pdo) <= 1

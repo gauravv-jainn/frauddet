@@ -83,6 +83,7 @@ def test_score_matches_offline_scores_with_db_key(client, db_key):
         assert item["probability"] == pytest.approx(p, abs=1e-12)
         assert item["band"] in {"Low", "Medium", "High", "Critical"}
         assert item["decision"] in {"approve", "step_up", "review", "block"}
+        assert 0 <= item["risk_score"] <= 999
         assert item["expected_loss"] == pytest.approx(p * amt, abs=1e-9)
         assert item["reasons"]
     from fraudkit.auth import ApiKeyStore

@@ -97,6 +97,7 @@ class ScoreOut(BaseModel):
     band: str = Field(description="Final band after policy rules")
     model_band: str = Field(description="Band from the model alone")
     decision: str = Field(description="approve | step_up | review | block")
+    risk_score: int = Field(description="0-999 rank against the validation period (higher = riskier)")
     expected_loss: float = Field(description="Calibrated probability x amount")
     flagged: bool
     action: str
@@ -304,6 +305,7 @@ def score(req: ScoreRequest, request: Request, client: str = Depends(authenticat
                 band=e.band,
                 model_band=e.model_band,
                 decision=e.decision,
+                risk_score=e.risk_score,
                 expected_loss=e.expected_loss,
                 flagged=e.flagged,
                 policy_rules=[h.text for h in e.rules],

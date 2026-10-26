@@ -102,6 +102,7 @@ def score_batch(
     ex = explain_frame(fm, feat, thr, top_raising, top_lowering, policy)
     out = frame[["trans_num", "trans_date_trans_time", "cc_num", "amt", "category", "merchant"]].copy()
     out["risk"] = [e.probability for e in ex]
+    out["score"] = [e.risk_score for e in ex]
     out["band"] = [e.band for e in ex]
     out["model_band"] = [e.model_band for e in ex]
     out["decision"] = [e.decision for e in ex]
@@ -137,6 +138,7 @@ show["decision"] = show["decision"].map(ACTION_LABELS)
 show = show[
     [
         "decision",
+        "score",
         "risk",
         "expected_loss",
         "band",
@@ -154,7 +156,8 @@ st.dataframe(
     height=460,
     hide_index=True,
     column_config={
-        "risk": st.column_config.ProgressColumn("Model risk", format="%.3f", min_value=0.0, max_value=1.0),
+        "score": st.column_config.ProgressColumn("Risk score", format="%d", min_value=0, max_value=999),
+        "risk": st.column_config.NumberColumn("Probability", format="%.4f"),
         "expected_loss": st.column_config.NumberColumn("Expected loss (€)", format="%.2f"),
         "trans_date_trans_time": st.column_config.DatetimeColumn("Time", format="YYYY-MM-DD HH:mm"),
         "amt": st.column_config.NumberColumn("Amount", format="%.2f"),

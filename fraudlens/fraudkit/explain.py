@@ -39,6 +39,9 @@ GROUPS: dict[str, list[str]] = {
     "city": ["log_city_pop"],
     "gender": ["gender"],
     "history": ["n_txn_30d"],
+    "spending_window": ["n_txn_7d", "avg_amt_1d", "avg_amt_7d", "avg_amt_30d", "amt_to_avg_30d"],
+    "amount_z": ["amt_log_z"],
+    "card_testing": ["small_txn_24h"],
 }
 if sorted(sum(GROUPS.values(), [])) != sorted(FEATURES):
     raise RuntimeError("every feature must belong to exactly one explanation group")
@@ -67,6 +70,7 @@ class Explanation:
     model_band: str = ""  # band from the model alone; ``band`` is after policy rules
     rules: list = field(default_factory=list)  # RuleHit list (policy guardrails that fired)
     decision: str = ""  # approve | step_up | review | block (when a decision policy is given)
+    risk_score: int = 0  # 0-999 rank against the validation period (FraudModel.risk_score)
     expected_loss: float = 0.0  # calibrated probability x amount
 
     @property
@@ -117,6 +121,18 @@ def shap_matrix(fm: FraudModel, X: pd.DataFrame) -> tuple[np.ndarray, float]:
 
 
 # --------------------------------------------------------------------------- text
+def fmt_pct(p: float) -> str:
+    """Readable probability: keeps resolution at both ends instead of rounding to 0.0% / 100.0%."""
+    p = float(p)
+    if p < 1e-4:
+        return "<0.01%"
+    if p > 1 - 1e-4:
+        return ">99.99%"
+    if p < 0.01 or p > 0.99:
+        return f"{p:.2%}"
+    return f"{p:.1%}"
+
+
 def _money(x: float) -> str:
     return f"€{x:,.2f}"
 
@@ -249,6 +265,31 @@ def reason_text(group: str, raises: bool, r: pd.Series, fm: FraudModel) -> str:
         if raises:
             return f"Little recent activity on this card ({n} transaction(s) in the previous 30 days)"
         return f"Regular use of this card ({n} transactions in the previous 30 days)"
+    if group == "spending_window":
+        ratio, avg30, n7 = r.get("amt_to_avg_30d"), r.get("avg_amt_30d"), int(r.get("n_txn_7d", 0))
+        if pd.isna(ratio):
+            return "No spending in the previous 30 days to compare with"
+        if raises and ratio >= 1.5:
+            return f"Amount is {ratio:.1f}x this card's 30-day average ({_money(avg30)}; {n7} transactions in 7 days)"
+        if not raises and ratio <= 1.5:
+            return f"In line with the last 30 days ({ratio:.1f}x the {_money(avg30)} average; {n7} in 7 days)"
+        return f"Amount is {ratio:.1f}x the 30-day average of {_money(avg30)} ({n7} transactions in 7 days)"
+    if group == "amount_z":
+        z = r.get("amt_log_z")
+        if pd.isna(z):
+            return "Too little history to judge how unusual the amount is"
+        if raises and z > 0:
+            return f"Amount is {z:.1f} standard deviations above this card's usual spending"
+        if raises:
+            return f"Amount is {abs(z):.1f} standard deviations below this card's usual spending"
+        return f"Amount is within this card's usual range ({z:+.1f} standard deviations)"
+    if group == "card_testing":
+        n = int(r.get("small_txn_24h", 0))
+        if n > 0:
+            return f"{n} small 'test' charge(s) under €5 on this card in the last 24 hours" + (
+                "" if raises else " (common for this card)"
+            )
+        return "No small 'test' charges in the last 24 hours" + (" (pattern still raises risk)" if raises else "")
     raise KeyError(group)
 
 
@@ -276,18 +317,18 @@ def summarize(band: str, p: float, raising: list[Reason], lowering: list[Reason]
     lowering = lowering or []
     if band == "Low":
         if not raising:
-            return f"Low risk ({p:.1%}): nothing in this transaction stands out from the card's normal behaviour."
+            return f"Low risk ({fmt_pct(p)}): nothing in this transaction stands out from the card's normal behaviour."
         if lowering:
             return (
-                f"Low risk ({p:.1%}). The strongest risk signal is {_lc(raising[0].text)}, but it is "
+                f"Low risk ({fmt_pct(p)}). The strongest risk signal is {_lc(raising[0].text)}, but it is "
                 f"outweighed by: {_lc(lowering[0].text)}."
             )
-        return f"Low risk ({p:.1%}). The strongest risk signal, {_lc(raising[0].text)}, is weak on its own."
+        return f"Low risk ({fmt_pct(p)}). The strongest risk signal, {_lc(raising[0].text)}, is weak on its own."
     if not raising:
-        return f"{band} risk ({p:.1%}) with no single dominant signal."
+        return f"{band} risk ({fmt_pct(p)}) with no single dominant signal."
     main = _lc(raising[0].text)
     more = f", plus {len(raising) - 1} more signal{'s' if len(raising) > 2 else ''}" if len(raising) > 1 else ""
-    return f"{band} risk ({p:.1%}) mainly because {main}{more}."
+    return f"{band} risk ({fmt_pct(p)}) mainly because {main}{more}."
 
 
 def explain_frame(
@@ -307,6 +348,7 @@ def explain_frame(
     p_raw = fm.predict_raw(X)
     p = fm.calibrator.transform(p_raw)
     bands = fm.band(p, threshold)
+    scores = fm.risk_score(p)
     sv, base = shap_matrix(fm, X)
     out = []
     rows = feat.assign(merchant_te=X["merchant_te"].to_numpy())
@@ -324,7 +366,7 @@ def explain_frame(
             more = f" ({len(hits) - 1} more rule{'s' if len(hits) > 2 else ''} fired)" if len(hits) > 1 else ""
             summary = (
                 f"{final} risk by policy rule: {_lc(hits[0].text)}{more}. The model alone scores it "
-                f"{float(p[i]):.1%} ({model_band})"
+                f"{fmt_pct(float(p[i]))} ({model_band})"
                 + (
                     ", but this transaction is outside its training data."
                     if any(h.rule == "out_of_range" for h in hits)
@@ -363,6 +405,7 @@ def explain_frame(
                 rules=hits,
                 decision=decision,
                 expected_loss=el,
+                risk_score=int(scores[i]),
             )
         )
     return out

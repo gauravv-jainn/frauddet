@@ -16,6 +16,7 @@ from common import (
     decisions_vector,
     get_case_store,
     get_history,
+    get_model,
     get_scored,
     get_watchlist,
     money,
@@ -76,6 +77,7 @@ if len(sc):
     dec[test_mask] = decisions_vector(txns[test_mask], pol)
 txns["decision"] = dec
 txns["label"] = np.where(txns["is_fraud"] == 1, "fraud", "genuine")
+txns["score"] = np.where(txns["p"].notna(), get_model().risk_score(txns["p"].fillna(0).to_numpy()), np.nan)
 cases = store.cases()
 card_cases = cases[cases["card_ref"] == card_hash(cc)] if len(cases) else cases
 
@@ -183,7 +185,20 @@ st.markdown("**Recent transactions**")
 recent = txns.sort_values("trans_date_trans_time", ascending=False).head(60)
 recent = recent.assign(decision=recent["decision"].map(lambda d: ACTION_LABELS.get(d, d)))
 st.dataframe(
-    recent[["trans_date_trans_time", "amt", "category", "merchant", "city", "dist_home_km", "p", "decision", "label"]],
+    recent[
+        [
+            "trans_date_trans_time",
+            "amt",
+            "category",
+            "merchant",
+            "city",
+            "dist_home_km",
+            "score",
+            "p",
+            "decision",
+            "label",
+        ]
+    ],
     hide_index=True,
     width="stretch",
     height=320,
@@ -191,7 +206,8 @@ st.dataframe(
         "trans_date_trans_time": st.column_config.DatetimeColumn("Time", format="YYYY-MM-DD HH:mm"),
         "amt": st.column_config.NumberColumn("Amount", format="€%.2f"),
         "dist_home_km": st.column_config.NumberColumn("km from home", format="%.0f"),
-        "p": st.column_config.ProgressColumn("Risk", format="%.3f", min_value=0.0, max_value=1.0),
+        "score": st.column_config.ProgressColumn("Risk score", format="%d", min_value=0, max_value=999),
+        "p": st.column_config.NumberColumn("Probability", format="%.5f"),
     },
 )
 st.caption("Decisions shown here are the model policy only; policy rules are applied per case.")

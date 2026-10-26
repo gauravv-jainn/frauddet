@@ -22,11 +22,12 @@ from common import (
     money,
     page_setup,
     reason_cards,
+    score_bounds,
     rule_cards,
     require_artifacts,
     sidebar_controls,
 )
-from fraudkit.explain import destination, explain_frame, whatif
+from fraudkit.explain import destination, explain_frame, fmt_pct, whatif
 from fraudkit.features import featurize_with_history
 from fraudkit.decision import describe_policy
 from fraudkit.security import esc
@@ -44,11 +45,13 @@ flag_all = (dec_all == "review") | (dec_all == "block")
 def show(e, truth: int | None = None, key: str = "main", cc_num=None):
     c1, c2 = st.columns([1, 1.3])
     with c1:
-        st.plotly_chart(gauge(e.probability, thr, bounds), width="stretch", key=f"gauge_{key}")
+        thr_score, bound_scores = score_bounds(fm, thr)
+        st.plotly_chart(gauge(e.risk_score, thr_score, bound_scores), width="stretch", key=f"gauge_{key}")
     with c2:
         st.markdown(
-            f"{action_badge(e.decision)} &nbsp; {band_chip(e.band)} &nbsp; <b>{e.probability:.2%}</b> calibrated "
-            f"probability &middot; expected loss <b>{money(e.expected_loss, 2)}</b>",
+            f"{action_badge(e.decision)} &nbsp; {band_chip(e.band)} &nbsp; risk score <b>{e.risk_score}</b> "
+            f"&middot; <b>{fmt_pct(e.probability)}</b> calibrated probability &middot; expected loss "
+            f"<b>{money(e.expected_loss, 2)}</b>",
             unsafe_allow_html=True,
         )
         if e.escalated:
@@ -150,7 +153,7 @@ if mode == "Pick a real test transaction":
         )
         delta = w.probability - e.probability
         st.markdown(
-            f"Risk {e.probability:.2%} &rarr; <b>{w.probability:.2%}</b> "
+            f"Risk {fmt_pct(e.probability)} &rarr; <b>{fmt_pct(w.probability)}</b> "
             f"(<span style='color:{'#B91C1C' if delta > 0 else '#15803D'}'>{delta * 100:+.1f} "
             "percentage points</span>), band "
             f"{band_chip(e.band)} &rarr; {band_chip(w.band)}",

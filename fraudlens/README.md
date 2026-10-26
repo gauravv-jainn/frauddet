@@ -166,6 +166,37 @@ step is appended to `artifacts/training_log.jsonl`. Everything is seeded and Lig
 6. **What-if** re-scores the same transaction with a different amount, hour or merchant distance, recomputing the
    history features against the card's real past.
 
+## Model v3: research-based features and smooth calibration
+
+**Why scores looked like 0% or 100%.** The calibrator was isotonic regression, a step function: about 95% of test
+transactions got exactly 0% and the riskiest exactly 100%, with only 94 distinct values for 555,719 transactions. The
+model's ranking was fine; the calibrator threw the resolution away. Training now compares isotonic, Platt and beta
+calibration on two time-halves of validation and keeps the lowest out-of-sample log-loss
+(**platt**). The test set now has **522,809 distinct probabilities**. A **risk score
+0-999** on a log-odds scale (about 33 points doubles the odds, like a credit score) makes very small and very large
+probabilities readable.
+
+**Features from the fraud literature**, each tested on validation (`scripts/feature_ablation.py`, two seeds):
+- spending windows over 1, 7 and 30 days, in the RFM style of the
+  [Fraud Detection Handbook](https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_3_GettingStarted/BaselineFeatureTransformation.html);
+- a z-score of the amount against the card's own history;
+- card-testing probes: small charges under €5 before a large one;
+- merchant velocity;
+- merchant and category fraud risk with a 7-day label delay;
+- weekend and circular hour.
+
+All research groups together raised validation PR-AUC from 0.9847 to
+0.9864 (seed noise
+0.0005). The simplest set that matched it was kept: spending windows, the z-score and
+card-testing probes.
+
+The retuned model scores validation PR-AUC **0.9872** (was 0.9844) and test PR-AUC
+**0.9765** (95% CI 0.9719-0.9811; was 0.9722). Test ROC-AUC is
+0.9995, with precision 83.5% (was 81.1%) and 7.3 false
+alarms per 10k genuine (was 8.7). Recall is 95.9% (was 96.4%). Total cost at the threshold chosen on
+validation is 30,137 (was 28,734): ranking improved, while the validation-chosen threshold moved
+from 0.0238 to 0.0837.
+
 ## Decision policy: flat threshold or expected loss
 
 `fraudkit/decision.py` turns the calibrated probability into one of four actions: **approve**, **step-up**
@@ -252,30 +283,30 @@ See [SECURITY.md](SECURITY.md) for the full list and for what is still needed be
 
 | Model | PR-AUC | ROC-AUC | Brier | Fit time (s) |
 |---|---|---|---|---|
-| **LightGBM tuned (Optuna)** (selected) | 0.9844 | 0.9998 | 0.00063 | 67.4 |
-| Random forest | 0.9549 | 0.9974 | 0.00105 | 23.2 |
-| LightGBM default | 0.8027 | 0.9556 | 0.00162 | 2.2 |
-| Logistic regression | 0.7438 | 0.9672 | 0.00247 | 4.0 |
+| **LightGBM tuned (Optuna)** (selected) | 0.9872 | 0.9998 | 0.00053 | 5.4 |
+| Random forest | 0.9570 | 0.9962 | 0.00098 | 35.9 |
+| LightGBM default | 0.7977 | 0.9580 | 0.00173 | 2.5 |
+| Logistic regression | 0.7597 | 0.9814 | 0.00231 | 6.8 |
 
-Optuna: 30 trials, 3-fold stratified CV, best CV PR-AUC 0.9842.
+Optuna: 30 trials, 3-fold stratified CV, best CV PR-AUC 0.9866.
 
 **Test set** (555,719 transactions from 2020-06-21 to 2020-12-31, 2,145 frauds), evaluated once:
 
 | Metric | Value |
 |---|---|
-| PR-AUC (95% bootstrap CI) | 0.9722 (0.9666 - 0.9773), 1000 resamples |
-| ROC-AUC | 0.9978 |
-| Brier score, uncalibrated -> calibrated | 0.00055 -> 0.00039 (isotonic) |
-| Decision threshold (chosen on validation) | 0.0238 (review cost 5 per alert) |
-| Recall at threshold | 96.4% |
-| Precision at threshold | 81.1% |
-| False alarms per 10,000 genuine | 8.7 |
-| Transactions flagged | 2,548 |
+| PR-AUC (95% bootstrap CI) | 0.9765 (0.9719 - 0.9811), 1000 resamples |
+| ROC-AUC | 0.9995 |
+| Brier score, uncalibrated -> calibrated | 0.00050 -> 0.00037 (platt) |
+| Decision threshold (chosen on validation) | 0.0837 (review cost 5 per alert) |
+| Recall at threshold | 95.9% |
+| Precision at threshold | 83.5% |
+| False alarms per 10,000 genuine | 7.3 |
+| Transactions flagged | 2,463 |
 | Fraud amount in test period | 1,133,325 |
-| Cost with model (missed fraud + reviews) | 15,994 + 12,740 = 28,734 |
-| **Saved vs no model** | **1,104,591** |
+| Cost with model (missed fraud + reviews) | 17,822 + 12,315 = 30,137 |
+| **Saved vs no model** | **1,103,188** |
 
-Full training run: 1235 s on 32 CPU threads (Windows-10-10.0.26200-SP0).
+Full training run: 1,236 s for the identical model (archived run 20261025-233115-3abe0ebd; the final run's wall-clock time includes the computer sleeping) on 32 CPU threads (Windows-10-10.0.26300-SP0).
 <!-- RESULTS:END -->
 
 ## Screenshots

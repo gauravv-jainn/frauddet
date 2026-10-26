@@ -13,6 +13,20 @@ import pandas as pd
 
 NIGHT_HOURS = {22, 23, 0, 1, 2, 3}
 IMPOSSIBLE_SPEED_KMH = 800.0  # faster than a commercial flight
+SMALL_AMOUNT = 5.0  # card-testing probes are typically a few cents to < $5
+LABEL_DELAY_DAYS = 7  # fraud labels (chargebacks) are assumed known one week after the transaction
+RISK_WINDOW_DAYS = 30
+RISK_PRIOR, RISK_SMOOTHING = 0.005, 50.0  # smoothed fraud rate pulls small entities towards a 0.5% prior
+
+# Candidate features from the literature, tested in scripts/feature_ablation.py before being used by the model.
+RESEARCH_FEATURES = {
+    "spending windows (RFM)": ["n_txn_7d", "avg_amt_1d", "avg_amt_7d", "avg_amt_30d", "amt_to_avg_30d"],
+    "amount z-score vs card history": ["amt_log_z"],
+    "card-testing probes": ["small_txn_24h"],
+    "weekend + circular hour": ["is_weekend", "hour_sin", "hour_cos"],
+    "merchant/category fraud risk (7-day label delay)": ["merch_risk_30d", "cat_risk_30d"],
+    "merchant velocity": ["merch_txn_1h", "merch_txn_24h"],
+}
 
 CATEGORICAL = ["category", "gender"]
 NUMERIC = [
@@ -35,6 +49,14 @@ NUMERIC = [
     "impossible_travel",
     "first_time_category",
     "n_txn_30d",
+    # added after the validation ablation (scripts/feature_ablation.py): +0.0017 PR-AUC, 3x the seed noise
+    "n_txn_7d",
+    "avg_amt_1d",
+    "avg_amt_7d",
+    "avg_amt_30d",
+    "amt_to_avg_30d",
+    "amt_log_z",
+    "small_txn_24h",
 ]
 FEATURES = NUMERIC + CATEGORICAL
 
@@ -75,6 +97,51 @@ def _window_stats(times_ns: np.ndarray, amts: np.ndarray, window_ns: int):
     csum = np.concatenate([[0.0], np.cumsum(amts)])
     amt_sum = csum[idx] - csum[lo]
     return count, amt_sum
+
+
+def _entity_features(
+    df: pd.DataFrame, times_ns: np.ndarray, amt: np.ndarray, col: str, prefix: str, velocity: bool = True
+):
+    """Per-entity (merchant / category) features from earlier rows of the same entity.
+
+    * ``{prefix}_txn_1h`` / ``_24h``: transactions at the entity in the last hour / day (all cards).
+    * ``{prefix}_risk_30d``: smoothed fraud rate of the entity over [t - 37 d, t - 7 d). Labels younger than
+      LABEL_DELAY are ignored because in production chargebacks arrive late (Fraud Detection Handbook).
+      Rows without a label (e.g. newly scored transactions) count neither as fraud nor as volume.
+    """
+    codes = pd.factorize(df[col].astype(str))[0]
+    order = np.lexsort((df["_pos"].to_numpy(), times_ns, codes))  # ties: original arrival order
+    c_sorted, t_sorted = codes[order], times_ns[order]
+    y = (
+        pd.to_numeric(df["is_fraud"], errors="coerce").to_numpy(dtype="float64")
+        if "is_fraud" in df
+        else np.full(len(df), np.nan)
+    )
+    y_sorted = y[order]
+    known = (~np.isnan(y_sorted)).astype("float64")
+    fraud = np.nan_to_num(y_sorted)
+    bounds = np.flatnonzero(np.r_[True, c_sorted[1:] != c_sorted[:-1], True])
+    hour_ns, day_ns = 3_600 * 1_000_000_000, 24 * 3_600 * 1_000_000_000
+    risk = np.empty(len(df))
+    v1 = np.zeros(len(df), dtype="int32")
+    v24 = np.zeros(len(df), dtype="int32")
+    for a, b in zip(bounds[:-1], bounds[1:], strict=True):
+        ts = t_sorted[a:b]
+        lo = np.searchsorted(ts, ts - (RISK_WINDOW_DAYS + LABEL_DELAY_DAYS) * day_ns, side="left")
+        hi = np.searchsorted(ts, ts - LABEL_DELAY_DAYS * day_ns, side="left")
+        ck = np.r_[0.0, np.cumsum(known[a:b])]
+        cf = np.r_[0.0, np.cumsum(fraud[a:b])]
+        n_lab, n_fraud = ck[hi] - ck[lo], cf[hi] - cf[lo]
+        risk[a:b] = (n_fraud + RISK_PRIOR * RISK_SMOOTHING) / (n_lab + RISK_SMOOTHING)
+        if velocity:
+            v1[a:b], _ = _window_stats(ts, amt[order][a:b], hour_ns)
+            v24[a:b], _ = _window_stats(ts, amt[order][a:b], day_ns)
+    inv = np.empty(len(df), dtype=np.int64)
+    inv[order] = np.arange(len(df))
+    df[f"{prefix}_risk_30d"] = risk[inv]
+    if velocity:
+        df[f"{prefix}_txn_1h"] = v1[inv]
+        df[f"{prefix}_txn_24h"] = v24[inv]
 
 
 def build_features(raw: pd.DataFrame) -> pd.DataFrame:
@@ -171,6 +238,41 @@ def build_features(raw: pd.DataFrame) -> pd.DataFrame:
     df["n_txn_24h"] = n24
     df["n_txn_30d"] = n30d
     df["amt_sum_24h"] = s24
+
+    # ---- research-based features (see PROGRESS M11 for sources); all from strictly earlier rows ----
+    # RFM-style spending windows (Fraud Detection Handbook): count and average amount over 1 / 7 / 30 days
+    day_ns = 24 * hour_ns
+    n7 = np.zeros(len(df), dtype="int32")
+    s1, s7, s30, small24 = (np.zeros(len(df)) for _ in range(4))
+    small = (amt < SMALL_AMOUNT).astype("float64")
+    for a, b in zip(bounds[:-1], bounds[1:], strict=True):
+        _, s1[a:b] = _window_stats(times_ns[a:b], amt[a:b], day_ns)
+        n7[a:b], s7[a:b] = _window_stats(times_ns[a:b], amt[a:b], 7 * day_ns)
+        _, s30[a:b] = _window_stats(times_ns[a:b], amt[a:b], 30 * day_ns)
+        _, small24[a:b] = _window_stats(times_ns[a:b], small[a:b], day_ns)  # card-testing probes
+    with np.errstate(divide="ignore", invalid="ignore"):
+        avg30 = np.where(n30d > 0, s30 / n30d, np.nan)
+        df["n_txn_7d"] = n7
+        df["avg_amt_1d"] = np.where(n24 > 0, s1 / n24, np.nan)
+        df["avg_amt_7d"] = np.where(n7 > 0, s7 / n7, np.nan)
+        df["avg_amt_30d"] = avg30
+        df["amt_to_avg_30d"] = _finite(amt / avg30)
+        # z-score of log(1 + amount) against the card's own history (expanding mean / std of earlier rows)
+        la = np.log1p(amt)
+        n_prev = df["card_txn_count"].to_numpy().astype("float64")
+        csum = df.assign(_la=la).groupby("cc_num", sort=False)["_la"].cumsum().to_numpy() - la
+        csq = df.assign(_la2=la * la).groupby("cc_num", sort=False)["_la2"].cumsum().to_numpy() - la * la
+        mean = csum / n_prev
+        std = np.sqrt(np.maximum(csq / n_prev - mean * mean, 0.0))
+        df["amt_log_z"] = np.where((n_prev >= 2) & (std > 1e-6), (la - mean) / std, np.nan)
+    df["small_txn_24h"] = small24.astype("int32")
+    # calendar (weekend) and time as a circle
+    df["is_weekend"] = (df["day_of_week"] >= 5).astype("int8")
+    df["hour_sin"] = np.sin(2 * np.pi * df["hour"] / 24.0)
+    df["hour_cos"] = np.cos(2 * np.pi * df["hour"] / 24.0)
+    # merchant velocity (all cards) and merchant / category fraud risk from labels at least LABEL_DELAY old
+    _entity_features(df, times_ns, amt, "merchant", "merch")
+    _entity_features(df, times_ns, amt, "category", "cat", velocity=False)
 
     df["category"] = df["category"].astype("string")
     df["gender"] = df["gender"].astype("string")

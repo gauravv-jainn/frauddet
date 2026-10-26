@@ -268,7 +268,7 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import average_precision_score, brier_score_loss, roc_auc_score
+    from sklearn.metrics import average_precision_score, brier_score_loss, log_loss, roc_auc_score
     from sklearn.model_selection import StratifiedKFold
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import FunctionTransformer, OneHotEncoder, StandardScaler
@@ -278,7 +278,7 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
     from .features import CATEGORICAL, CONTEXT, FEATURES, NUMERIC, MerchantEncoder, build_features, model_frame
     from .decision import policy_flags, tune_expected_loss
     from .monitoring import reference_profile
-    from .score import Calibrator, FraudModel
+    from .score import P_MIN, Calibrator, FraudModel
 
     seed = int(cfg["seed"])
     seed_everything(seed)
@@ -549,11 +549,36 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
         with R.stage("calibration", 1) as st:
             p_val_raw = model.predict_proba(X_val)[:, 1]
             n_pos_val = int(y_val.sum())
-            method = "isotonic" if n_pos_val >= 300 else "platt"
+            # choose the calibrator out of sample: fit on one time-half of validation, score on the other (both
+            # ways); log-loss punishes over-confident 0% / 100% outputs, so it decides; Brier is reported too
+            half = len(y_val) // 2  # validation rows are in time order
+            parts = [(slice(0, half), slice(half, None)), (slice(half, None), slice(0, half))]
+            comparison = []
+            for meth in Calibrator.METHODS:
+                ll, br = [], []
+                for fit_s, ev_s in parts:
+                    c = Calibrator(meth).fit(p_val_raw[fit_s], y_val[fit_s])
+                    pe = c.transform(p_val_raw[ev_s])
+                    ll.append(log_loss(y_val[ev_s], pe, labels=[0, 1]))
+                    br.append(brier_score_loss(y_val[ev_s], pe))
+                full_fit = Calibrator(meth).fit(p_val_raw, y_val).transform(p_val_raw)
+                comparison.append(
+                    {
+                        "method": meth,
+                        "log_loss": float(np.mean(ll)),
+                        "brier": float(np.mean(br)),
+                        "distinct_values": int(len(np.unique(np.round(full_fit, 12)))),
+                        "share_at_floor": float(np.mean(full_fit <= P_MIN * 10)),
+                    }
+                )
+                R.log.log("calibration", f"{meth}:oos_log_loss", float(np.mean(ll)))
+            method = min(comparison, key=lambda r: r["log_loss"])["method"]
             cal = Calibrator(method).fit(p_val_raw, y_val)
             p_val = cal.transform(p_val_raw)
             M["calibration"] = {
                 "method": method,
+                "chosen_by": "lowest out-of-sample log-loss (2-fold time split of validation)",
+                "comparison": comparison,
                 "validation_positives": n_pos_val,
                 "validation_brier_before": float(brier_score_loss(y_val, p_val_raw)),
                 "validation_brier_after": float(brier_score_loss(y_val, p_val)),
@@ -681,6 +706,10 @@ def run(cfg: dict, out: Path, fast: bool, trials: int | None, sample_cards: int 
                 "roc_auc": float(roc_auc_score(y_test, p_test)),
                 "brier_before_calibration": float(brier_score_loss(y_test, p_test_raw)),
                 "brier_after_calibration": float(brier_score_loss(y_test, p_test)),
+                "log_loss_calibrated": float(log_loss(y_test, p_test, labels=[0, 1])),
+                "distinct_probabilities": int(len(np.unique(np.round(p_test, 12)))),
+                "share_below_0_01pct": float(np.mean(p_test < 1e-4)),
+                "share_above_99pct": float(np.mean(p_test > 0.99)),
                 "reliability_before": reliability_table(y_test, p_test_raw),
                 "reliability_after": reliability_table(y_test, p_test),
                 "at_threshold": at_test,

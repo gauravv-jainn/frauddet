@@ -23,7 +23,7 @@ from sklearn.metrics import average_precision_score
 
 from fraudkit.config import load_config
 from fraudkit.data import load_raw
-from fraudkit.features import CATEGORICAL, NUMERIC, MerchantEncoder, build_features
+from fraudkit.features import CATEGORICAL, NUMERIC, RESEARCH_FEATURES, MerchantEncoder, build_features
 from fraudkit.train import lgbm_base, subsample_negatives
 
 CANDIDATES = {
@@ -31,7 +31,14 @@ CANDIDATES = {
     "+ amount vs card's previous maximum": ["amt_to_card_max"],
     "+ share of the card's purchases in this category": ["cat_share"],
     "+ how usual this hour is for the card": ["hour_share"],
-    "+ all three": ["amt_to_card_max", "cat_share", "hour_share"],
+    **{f"+ {name}": cols for name, cols in RESEARCH_FEATURES.items()},
+    "+ all research groups": sum(RESEARCH_FEATURES.values(), []),
+    "+ all research groups except weekend/hour": sum(
+        (v for k, v in RESEARCH_FEATURES.items() if k != "weekend + circular hour"), []
+    ),
+    "+ spending windows + z-score + card testing": RESEARCH_FEATURES["spending windows (RFM)"]
+    + RESEARCH_FEATURES["amount z-score vs card history"]
+    + RESEARCH_FEATURES["card-testing probes"],
 }
 SEEDS = (42, 7)
 

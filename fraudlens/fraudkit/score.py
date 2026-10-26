@@ -23,12 +23,47 @@ ACTIONS = {
 }
 
 
+P_MIN, P_MAX = 1e-12, 1 - 1e-12  # never exactly 0 or 1, but low enough not to merge tiny scores
+
+
+SCORE_P_LOW, SCORE_P_HIGH = 1e-6, 0.999
+
+
+def risk_score(p) -> np.ndarray:
+    lo, hi = _logit(SCORE_P_LOW), _logit(SCORE_P_HIGH)
+    z = _logit(np.atleast_1d(np.asarray(p, dtype="float64")))
+    return np.clip(np.round((z - lo) / (hi - lo) * 999), 0, 999).astype(int)
+
+
+def score_points_to_double_odds() -> float:
+    return float(999 * np.log(2) / (_logit(SCORE_P_HIGH) - _logit(SCORE_P_LOW)))
+
+
 class Calibrator:
-    """Maps raw model probabilities to calibrated ones (isotonic or Platt)."""
+    """Maps raw model probabilities to calibrated ones.
+
+    * ``isotonic``: monotone step function. Flexible, but flat at the ends, so most transactions get the same
+      value (exactly 0 before clipping) and ranking resolution is lost.
+    * ``platt``: logistic regression on logit(raw). Smooth and strictly monotone (keeps the full ranking).
+    * ``beta``: logistic regression on [log(raw), -log(1 - raw)] (Kull et al., 2017). Smooth, strictly monotone
+      in practice, and more flexible than Platt for skewed scores.
+    Training picks the method with the lowest out-of-sample log-loss on the validation period.
+    """
+
+    METHODS = ("isotonic", "platt", "beta")
 
     def __init__(self, method: str):
+        if method not in self.METHODS:
+            raise ValueError(f"unknown calibration method {method!r}")
         self.method = method
         self.model = None
+
+    @staticmethod
+    def _design(p_raw: np.ndarray, method: str) -> np.ndarray:
+        p = np.clip(np.asarray(p_raw, dtype="float64"), 1e-15, 1 - 1e-15)
+        if method == "platt":
+            return np.log(p / (1 - p)).reshape(-1, 1)
+        return np.column_stack([np.log(p), -np.log1p(-p)])
 
     def fit(self, p_raw: np.ndarray, y: np.ndarray):
         if self.method == "isotonic":
@@ -38,18 +73,20 @@ class Calibrator:
         else:
             from sklearn.linear_model import LogisticRegression
 
-            self.model = LogisticRegression(C=1e6).fit(_logit(p_raw).reshape(-1, 1), y)
+            self.model = LogisticRegression(C=1e6, max_iter=1000).fit(self._design(p_raw, self.method), y)
         return self
 
     def transform(self, p_raw: np.ndarray) -> np.ndarray:
         p_raw = np.asarray(p_raw, dtype="float64")
         if self.method == "isotonic":
-            return self.model.predict(p_raw)
-        return self.model.predict_proba(_logit(p_raw).reshape(-1, 1))[:, 1]
+            out = self.model.predict(p_raw)
+        else:
+            out = self.model.predict_proba(self._design(p_raw, self.method))[:, 1]
+        return np.clip(out, P_MIN, P_MAX)
 
 
 def _logit(p):
-    p = np.clip(np.asarray(p, dtype="float64"), 1e-7, 1 - 1e-7)
+    p = np.clip(np.asarray(p, dtype="float64"), 1e-15, 1 - 1e-15)
     return np.log(p / (1 - p))
 
 
@@ -67,6 +104,12 @@ class FraudModel:
     versions: dict = field(default_factory=dict)
     features: list = field(default_factory=lambda: list(FEATURES))
     version: str = "unversioned"  # set by the trainer: <finished UTC>-<sha256 of model file>
+    score_ref: list = field(default_factory=list)  # unused (kept so older model files still load)
+
+    def risk_score(self, p) -> np.ndarray:
+        """Risk score 0-999 on a log-odds scale (like credit / fraud scores): p = 1e-6 -> 0, p = 0.999 -> 999,
+        and every ~33 points doubles the odds of fraud. Decisions use the probability; the score is for reading."""
+        return risk_score(p)
 
     # --- feature preparation -------------------------------------------------
     def prepare(self, feat: pd.DataFrame) -> pd.DataFrame:

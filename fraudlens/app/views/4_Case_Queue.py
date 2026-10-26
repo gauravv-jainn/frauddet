@@ -147,6 +147,7 @@ cases["age_h"] = (
 active = cases["status"].isin(["open", "escalated"])
 cases["overdue"] = active & (cases["age_h"] > sla)
 cases["priority"] = cases["expected_loss"].fillna(cases["score"] * cases["amount"])
+cases["risk_score"] = fm.risk_score(cases["score"].to_numpy())
 cases["_active"] = active
 cases = cases.sort_values(["_active", "overdue", "priority"], ascending=False)  # work queue first
 by_id = cases.set_index("case_id")
@@ -157,7 +158,7 @@ def case_card(c) -> str:
     who = esc(c["assignee"]) if c["assignee"] else "unassigned"
     return (
         f"<div class='fl-case'><b>#{c['case_id']}</b> &middot; {money(c['amount'], 2)} &middot; {esc(c['category'])}"
-        f"<br><span class='meta'>risk {c['score']:.0%} &middot; EL {money(c['priority'], 0)} &middot; "
+        f"<br><span class='meta'>score {c['risk_score']} &middot; EL {money(c['priority'], 0)} &middot; "
         f"{c['age_h']:.1f} h{over} &middot; {who}</span></div>"
     )
 
