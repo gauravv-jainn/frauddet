@@ -24,7 +24,7 @@
     "n_estimators": 900,
     "num_leaves": 23
   },
-  "raw_dataset_folder": "C:\\Users\\gaura\\.cache\\kagglehub\\datasets\\kartik2112\\fraud-detection\\versions\\1",
+  "raw_dataset_folder": "~\\.cache\\kagglehub\\datasets\\kartik2112\\fraud-detection\\versions\\1",
   "raw_rows": {
     "fraudTrain.csv": 1296675,
     "fraudTest.csv": 555719
