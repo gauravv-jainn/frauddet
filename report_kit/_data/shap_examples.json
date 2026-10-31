@@ -1,0 +1,140 @@
+[
+  {
+    "case": "caught fraud (true positive, highest p)",
+    "trans_num": "cb9b6ae471a8f51bdc2a640fd905d512",
+    "row_label_is_fraud": 1,
+    "amount": 856.3,
+    "category": "misc_net",
+    "hour": 22,
+    "stored_p": 0.9999932350264893,
+    "recomputed_p": 0.9999932350264893,
+    "risk_score": 999,
+    "model_band": "Critical",
+    "final_band": "Critical",
+    "decision": "block",
+    "expected_loss": 856.2942071531827,
+    "summary": "Critical risk (>99.99%) mainly because large amount of €856.30, plus 3 more signals.",
+    "raising": [
+      {
+        "text": "Large amount of €856.30",
+        "shap": 9.352751858752262
+      },
+      {
+        "text": "Amount is 5.4x this card's 30-day average (€157.78; 11 transactions in 7 days)",
+        "shap": 7.554133091830656
+      },
+      {
+        "text": "3 other transaction(s) on this card in the last hour, 6 in the last 24 hours (€3,060.63)",
+        "shap": 4.41882059775287
+      },
+      {
+        "text": "Transaction at 10:57 PM (night-time)",
+        "shap": 4.272199619897762
+      }
+    ],
+    "lowering": [
+      {
+        "text": "Home city population 5,732",
+        "shap": -0.2196229754829942
+      },
+      {
+        "text": "Category 'misc_net' is rarely involved in fraud",
+        "shap": -0.13791689071828442
+      }
+    ],
+    "rules": [],
+    "base_value_log_odds": -14.580033174564322
+  },
+  {
+    "case": "false alarm (genuine flagged, highest p)",
+    "trans_num": "def046458db77bdd7a63d7edac50311d",
+    "row_label_is_fraud": 0,
+    "amount": 774.23,
+    "category": "misc_net",
+    "hour": 1,
+    "stored_p": 0.9889459686803874,
+    "recomputed_p": 0.9889459686803874,
+    "risk_score": 883,
+    "model_band": "Critical",
+    "final_band": "Critical",
+    "decision": "block",
+    "expected_loss": 765.6716373314164,
+    "summary": "Critical risk (98.9%) mainly because large amount of €774.23, plus 3 more signals.",
+    "raising": [
+      {
+        "text": "Large amount of €774.23",
+        "shap": 9.25759821436564
+      },
+      {
+        "text": "Transaction at 1:53 AM (night-time)",
+        "shap": 3.86364390680552
+      },
+      {
+        "text": "Amount is 22.3x what this card usually spends on 'misc_net' (average €34.75)",
+        "shap": 2.4004126125210123
+      },
+      {
+        "text": "Amount is 13.7x this card's 30-day average (€56.67; 18 transactions in 7 days)",
+        "shap": 1.7964259406378458
+      }
+    ],
+    "lowering": [
+      {
+        "text": "Category 'misc_net' is rarely involved in fraud",
+        "shap": -0.8828190753039852
+      },
+      {
+        "text": "Location is consistent with the previous transaction (144 km in 69 minutes)",
+        "shap": -0.26044751145907613
+      }
+    ],
+    "rules": [],
+    "base_value_log_odds": -14.580033174564322
+  },
+  {
+    "case": "missed fraud (false negative, highest p below threshold)",
+    "trans_num": "4d069e0e767b3163f62736966d64f6ed",
+    "row_label_is_fraud": 1,
+    "amount": 772.07,
+    "category": "misc_net",
+    "hour": 7,
+    "stored_p": 0.07992149033188838,
+    "recomputed_p": 0.07992149033188838,
+    "risk_score": 548,
+    "model_band": "Low",
+    "final_band": "Low",
+    "decision": "approve",
+    "expected_loss": 61.70498504054106,
+    "summary": "Low risk (8.0%). The strongest risk signal is large amount of €772.07, but it is outweighed by: category 'misc_net' is rarely involved in fraud.",
+    "raising": [
+      {
+        "text": "Large amount of €772.07",
+        "shap": 8.697035644367517
+      },
+      {
+        "text": "Amount is 2.6 standard deviations above this card's usual spending",
+        "shap": 1.7935670728616921
+      },
+      {
+        "text": "Amount is 10.5x what this card usually spends on 'misc_net' (average €73.77)",
+        "shap": 1.66556601359865
+      },
+      {
+        "text": "Cardholder age 27 (higher-risk age group in the data)",
+        "shap": 1.0414617712419305
+      }
+    ],
+    "lowering": [
+      {
+        "text": "Category 'misc_net' is rarely involved in fraud",
+        "shap": -1.1822956095653687
+      },
+      {
+        "text": "Home city population 116,001",
+        "shap": -0.7693196033168302
+      }
+    ],
+    "rules": [],
+    "base_value_log_odds": -14.580033174564322
+  }
+]

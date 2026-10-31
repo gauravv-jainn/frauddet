@@ -1,0 +1,37 @@
+// FraudLens system architecture. Sources: fraudlens/app, api, fraudkit, Dockerfile, docker-compose.yml, deploy/space
+digraph G {
+  rankdir=TB; compound=true; fontname="Arial"; nodesep=0.35; ranksep=0.6; splines=true;
+  node [fontname="Arial", fontsize=11, shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#475569"];
+  edge [fontname="Arial", fontsize=9, color="#475569"];
+
+  subgraph cluster_users { label="Users (roles enforced server-side: fraudkit/auth.py)"; style="rounded,filled"; fillcolor="#EEF2FF"; color="#C7D2FE";
+    viewer [label="viewer\n(read-only)"]; analyst [label="analyst\n(score, decide cases)"]; admin [label="admin\n(users, API keys, retrain, audit)"]; client [label="Client system\n(X-API-Key)", fillcolor="#F1F5F9"]; }
+
+  subgraph cluster_ui { label="Interfaces"; style="rounded,filled"; fillcolor="#F8FAFC"; color="#CBD5E1";
+    app [label="Streamlit app  (app/streamlit_app.py)\nlogin gate + 10 pages in app/views/", fillcolor="#DBEAFE"];
+    api [label="FastAPI scoring API  (api/main.py)\n/v1/health  /v1/ready  /v1/model  /v1/score", fillcolor="#DBEAFE"]; }
+
+  subgraph cluster_kit { label="fraudkit/  (shared Python package)"; style="rounded,filled"; fillcolor="#F0FDF4"; color="#BBF7D0";
+    features [label="features.py\nleakage-free features (28)"]; score [label="score.py\nFraudModel = LightGBM\n+ Platt calibrator + 0-999 score"];
+    explain [label="explain.py\nSHAP reason codes"]; rules [label="rules.py + watchlist.py\npolicy rules (can only raise band)"];
+    decision [label="decision.py\napprove / step-up / review / block"]; cases [label="cases.py\nanalyst case queue + audit"];
+    auth [label="auth.py\nPBKDF2 users, hashed API keys"]; mon [label="monitoring.py\nPSI drift"]; cfg [label="config.py\nvalidated configs/default.yaml"]; }
+
+  subgraph cluster_store { label="Storage"; style="rounded,filled"; fillcolor="#FFFBEB"; color="#FDE68A";
+    art [label="fraudlens/artifacts/\nmodel.joblib, metrics.json, reference_profile.json,\ntest_scored.parquet, history.parquet, runs/", shape=folder, fillcolor="#FEF3C7"];
+    db [label="SQLite (WAL)  data/fraudlens.sqlite\nusers, api_keys, admin_audit, cases, audit,\ncase_comments, watchlist", shape=cylinder, fillcolor="#FEF3C7"]; }
+
+  subgraph cluster_train { label="Offline training"; style="rounded,filled"; fillcolor="#FDF2F8"; color="#FBCFE8";
+    kaggle [label="Kaggle dataset\nkartik2112/fraud-detection", shape=note];
+    train [label="fraudkit/train.py\nOptuna + LightGBM, calibration,\nthreshold, test once", fillcolor="#FCE7F3"]; }
+
+  subgraph cluster_dep { label="Deployment"; style="rounded,filled"; fillcolor="#F1F5F9"; color="#CBD5E1";
+    docker [label="Docker image + docker-compose\n(api :8000, app :8501)"]; hf [label="Hugging Face Space (Dockerfile in deploy/space)\nscript prepared; live deployment NOT done", style="rounded,filled,dashed"]; }
+
+  viewer -> app; analyst -> app; admin -> app; client -> api;
+  app -> features; api -> features; features -> score; score -> explain; explain -> rules; rules -> decision;
+  app -> cases; app -> auth; api -> auth; app -> mon; cases -> db; auth -> db;
+  score -> art [label="load"]; mon -> art; cfg -> app [style=dashed]; cfg -> api [style=dashed];
+  kaggle -> train; train -> art [label="atomic versioned write"];
+  docker -> app [style=dashed, label="runs"]; docker -> api [style=dashed]; hf -> app [style=dashed];
+}

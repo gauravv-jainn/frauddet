@@ -1,0 +1,53 @@
+{
+  "risk_score": {
+    "genuine_median": 24.0,
+    "fraud_median": 950.0,
+    "score_at_decision_threshold": 551,
+    "score_at_high_0.30": 625,
+    "score_at_critical_0.70": 707,
+    "points_to_double_odds": 33.415944422441804,
+    "share_of_test_with_p_below_1e-4": 0.9526091423903088,
+    "distinct_p_values_test": 555719,
+    "band_bounds": {
+      "medium": 0.08368624495655863,
+      "high": 0.3,
+      "critical": 0.7
+    }
+  },
+  "latency_ms": {
+    "explain_one_transaction_warm_mean_of_20": 32.3232349999671,
+    "predict_proba_10000_rows": 90.57430000029854
+  },
+  "model_file": {
+    "path": "fraudlens/artifacts/model.joblib",
+    "bytes": 2433713,
+    "n_estimators": 900,
+    "num_leaves": 23
+  },
+  "raw_dataset_folder": "C:\\Users\\gaura\\.cache\\kagglehub\\datasets\\kartik2112\\fraud-detection\\versions\\1",
+  "raw_rows": {
+    "fraudTrain.csv": 1296675,
+    "fraudTest.csv": 555719
+  },
+  "fraud_rate_train_night_hours_22_to_03": 0.02086708956251927,
+  "fraud_rate_train_other_hours": 0.0011534664995619046,
+  "fraud_amt_train": {
+    "max": 1376.04,
+    "median": 396.505
+  },
+  "genuine_amt_train": {
+    "max": 28948.9,
+    "median": 47.28
+  },
+  "amt_over_2000_train": {
+    "rows": 731,
+    "frauds": 0
+  },
+  "columns_dropped_by_loader": [
+    "first",
+    "last",
+    "street",
+    "zip",
+    "unix_time"
+  ]
+}

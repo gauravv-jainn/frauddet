@@ -1,0 +1,7 @@
+method,path,auth,purpose,source
+GET,/v1/health,none,liveness probe,api/main.py:235
+GET,/v1/ready,none,model loaded + model version,api/main.py:240
+GET,/v1/model,X-API-Key,"model version, threshold, metrics summary",api/main.py:250
+POST,/v1/score,X-API-Key,"score up to 1,000 transactions; returns probability, band, decision, risk score, reasons",api/main.py:270
+GET,/health,none,legacy route kept for old clients,api/main.py:329
+POST,/score,X-API-Key,legacy route (returns a bare list),api/main.py:334

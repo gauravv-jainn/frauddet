@@ -1,0 +1,10 @@
+permission,viewer,analyst,admin
+view,True,True,True
+score,False,True,True
+decide_cases,False,True,True
+feed_queue,False,True,True
+clear_queue,False,False,True
+retrain,False,False,True
+manage_users,False,False,True
+manage_api_keys,False,False,True
+view_audit,False,False,True

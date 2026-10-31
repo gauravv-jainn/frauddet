@@ -1,0 +1,28 @@
+{
+  "final_version": "20261026-184402-d37e9778",
+  "trials": {
+    "trials": 30,
+    "best_cv_pr_auc": 0.9866275846810048,
+    "median_cv_pr_auc": 0.9832949816679146,
+    "worst_cv_pr_auc": 0.966404245584148,
+    "first_trial_cv_pr_auc": 0.9756708214307116,
+    "sum_trial_seconds": 68879.240535
+  },
+  "ablation_seed_noise": 0.00045130405977145127,
+  "ablation_model_version": "20261025-224238-a6506be0",
+  "ablation_kept": [
+    "+ card-testing probes",
+    "+ all research groups",
+    "+ all research groups except weekend/hour",
+    "+ spending windows + z-score + card testing"
+  ],
+  "card_txn_count_psi_test_vs_fit": 4.194325580839482,
+  "threshold": 0.08368624495655863,
+  "decision_policy_served": {
+    "mode": "threshold",
+    "k": 8.0,
+    "threshold": 0.08368624495655863,
+    "review_cost": 5.0,
+    "critical": 0.7
+  }
+}

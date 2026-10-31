@@ -1,0 +1,29 @@
+tanouz2021 UNVERIFIED  Credit Card Fraud Detection Using Machine Learning Algorithm
+dalpozzolo2015cal VERIFIED 10.1109/ssci.2015.33 Calibrating Probability with Undersampling for Unbalanced Cl
+hegarcia2009 UNVERIFIED  Learning from Imbalanced Data
+dalpozzolo2014 UNVERIFIED  Learned lessons in credit card fraud detection from a practi
+bhattacharyya2011 VERIFIED 10.1016/j.dss.2010.08.008 Data mining for credit card fraud: A comparative study
+randhawa2018 VERIFIED 10.1109/access.2018.2806420 Credit Card Fraud Detection Using AdaBoost and Majority Voti
+chawla2002 VERIFIED 10.1613/jair.953 SMOTE: Synthetic Minority Over-sampling Technique
+chen2016 UNVERIFIED  Robust Detection of Static and Moving Chipless RFID Tags Usi
+saito2015 VERIFIED 10.1371/journal.pone.0118432 The Precision-Recall Plot Is More Informative than the ROC P
+davis2006 VERIFIED 10.1145/1143844.1143874 The relationship between Precision-Recall and ROC curves
+kaufman2012 UNVERIFIED  Leakage in data mining
+ribeiro2016 VERIFIED 10.18653/v1/n16-3020 “Why Should I Trust You?”: Explaining the Predictions of Any
+breiman2001 VERIFIED 10.1023/a:1010933404324 Random Forests
+fernandez2018 VERIFIED 10.1613/jair.1.11192 SMOTE for Learning from Imbalanced Data: Progress and Challe
+akiba2019 UNVERIFIED  hyOPTGB: An Efficient OPTUNA Hyperparameter Optimization Fra
+niculescu2005 VERIFIED 10.1145/1102351.1102430 Predicting good probabilities with supervised learning
+dalpozzolo2018 UNVERIFIED  Credit Card Fraud Detection: A Realistic Modeling and a Nove
+lundberg2017 VERIFIED  A Unified Approach to Interpreting Model Predictions
+guo2017 VERIFIED  On Calibration of Modern Neural Networks
+arxiv1909 VERIFIED (record exists; title taken from arXiv)  Towards automated feature engineering for credit card fraud 
+arxiv2503 VERIFIED (record exists; title taken from arXiv)  Development of New Methods for Detection and Control of Cred
+kull2017 VERIFIED  Beta calibration: a well-founded and easily implemented impr
+ke2017 VERIFIED  LightGBM: A Highly Efficient Gradient Boosting Decision Tree
+handbook UNVERIFIED  
+owasp VERIFIED  Password Storage - OWASP Cheat Sheet Series
+sparkov UNVERIFIED  GitHub - namebrandon/Sparkov_Data_Generation: Synthetic Cred
+kaggle VERIFIED  Credit Card Transactions Fraud Detection Dataset | Kaggle
+sdg VERIFIED  THE 17 GOALS | Sustainable Development
+wrote ~\Downloads\Github - projects\frauddet\report_kit\tables\references_verification.csv

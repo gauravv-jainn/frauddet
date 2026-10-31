@@ -1,0 +1,32 @@
+category,component,version,source
+Language,Python,3.11.15,metrics.json versions
+Data,pandas,3.0.6,metrics.json versions
+Data,numpy,2.4.6,metrics.json versions
+ML,scikit-learn,1.9.1,metrics.json versions
+ML,lightgbm,4.7.0,metrics.json versions
+ML,shap,0.51.0,metrics.json versions
+ML,optuna,5.0.0,metrics.json versions
+UI,streamlit,1.66.0,metrics.json versions
+UI,plotly,7.1.0,metrics.json versions
+Core,joblib,1.6.0,fraudlens/requirements.txt
+Core,kagglehub,1.0.2,fraudlens/requirements.txt
+Core,pydantic,2.14.1,fraudlens/requirements.txt
+Core,pyyaml,6.0.3,fraudlens/requirements.txt
+Core,rich,15.0.0,fraudlens/requirements.txt
+Test,pytest,9.1.1,fraudlens/requirements.txt
+API,fastapi,0.153.0,fraudlens/requirements-api.txt
+API,uvicorn,0.54.0,fraudlens/requirements-api.txt
+API,httpx,0.28.1,fraudlens/requirements-api.txt
+Quality,ruff,0.17.1,fraudlens/requirements-dev.txt and .github/workflows/fraudlens-ci.yml
+Tooling,playwright (screenshots),1.64.0,fraudlens/requirements-dev.txt
+Tooling,matplotlib,3.11.2,fraudlens/requirements-dev.txt
+Tooling,pypdfium2,5.14.0,fraudlens/requirements-dev.txt
+Deploy,huggingface_hub (deploy script),2.4.0,fraudlens/requirements-deploy.txt
+Deploy,Docker base image,python:3.11-slim,fraudlens/Dockerfile
+Deploy,Docker engine,29.6.1,command: docker info --format '{{.ServerVersion}}' (run in this session)
+Storage,SQLite (runtime library),3.50.4,command: python -c 'import sqlite3; print(sqlite3.sqlite_version)'
+Storage,pyarrow (parquet),26.0.0,command: importlib.metadata.version('pyarrow') in fraudlens/.venv
+Diagrams,Graphviz dot,15.0.0,command: dot -V
+Hardware,CPU threads used for training,32,metrics.json machine
+Hardware,Processor,"Intel64 Family 6 Model 183 Stepping 1, GenuineIntel",metrics.json machine
+OS,Training machine platform,Windows-10-10.0.26300-SP0,metrics.json machine

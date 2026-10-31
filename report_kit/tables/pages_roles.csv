@@ -1,0 +1,11 @@
+section,page,file,permission_to_open,roles_that_can_open
+Overview,Dashboard,fraudlens/app/views/1_Dashboard.py,view,"viewer, analyst, admin"
+Overview,Monitoring,fraudlens/app/views/7_Monitoring.py,view,"viewer, analyst, admin"
+Investigate,Case queue,fraudlens/app/views/4_Case_Queue.py,view,"viewer, analyst, admin"
+Investigate,Check a transaction,fraudlens/app/views/2_Check_Transaction.py,view,"viewer, analyst, admin"
+Investigate,Card 360,fraudlens/app/views/10_Card_360.py,view,"viewer, analyst, admin"
+Investigate,Batch scoring,fraudlens/app/views/3_Batch_Scoring.py,score,"analyst, admin"
+Model,Model report,fraudlens/app/views/5_Model_Report.py,view,"viewer, analyst, admin"
+Model,Training Lab,fraudlens/app/views/6_Training_Lab.py,view,"viewer, analyst, admin"
+Settings,Admin,fraudlens/app/views/8_Admin.py,manage_users,admin
+Settings,My account,fraudlens/app/views/9_Account.py,view,"viewer, analyst, admin"

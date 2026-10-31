@@ -1,0 +1,6 @@
+200 application/pdf | https://image-ppubs.uspto.gov/dirsearch-public/print/downloadPdf/8041620 | 
+200 text/html | https://risingwave.com/blog/real-time-feature-engineering-fraud-detection | <title>Real-Time Feature Engineering for Fraud Detection | RisingWave
+200 text/html; charset=utf-8 | https://temporian.readthedocs.io/en/latest/tutorials/bank_fraud_detection_with_tfdf/ | <title>Detecting payment card fraud with Temporian and YDF - Temporian
+200 text/html; charset=UTF-8 | https://www.chargebackgurus.com/blog/card-testing-fraud | <title>Preventing Card Testing Fraud
+200 text/html; charset=UTF-8 | https://www.fraudlogix.com/?p=17109 | <title>Card Testing: How to Detect &amp; Prevent It | Fraudlogix
+200 text/html; charset=utf-8 | https://fraud-detection-handbook.github.io/fraud-detection-handbook/Chapter_3_GettingStarted/BaselineFeatureTransformation.html | <title>3. Baseline feature transformation &#8212; Reproducible Machine Learning for Credit Card Fraud detection - Pra

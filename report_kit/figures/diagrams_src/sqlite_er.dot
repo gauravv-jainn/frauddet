@@ -1,0 +1,27 @@
+// SQLite schema after migration 3 (fraudkit/db.py MIGRATIONS). PK = primary key, FK = foreign key.
+digraph G {
+  rankdir=LR; fontname="Arial"; nodesep=0.5; ranksep=0.9;
+  node [fontname="Arial", fontsize=10, shape=plain];
+  edge [fontname="Arial", fontsize=9, color="#475569"];
+  cases [label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#FFFFFF"><TR><TD BGCOLOR="#DBEAFE" ALIGN="LEFT"><B>cases</B></TD></TR>
+   <TR><TD ALIGN="LEFT">case_id INTEGER PK</TD></TR><TR><TD ALIGN="LEFT">trans_num TEXT UNIQUE</TD></TR><TR><TD ALIGN="LEFT">cc_num TEXT (last 4 digits only)</TD></TR>
+   <TR><TD ALIGN="LEFT">txn_time, amount, category, merchant</TD></TR><TR><TD ALIGN="LEFT">score, band, reasons, status, analyst_note</TD></TR>
+   <TR><TD ALIGN="LEFT">source, created_at, updated_at</TD></TR><TR><TD ALIGN="LEFT">assignee, model_version  (migration 2)</TD></TR>
+   <TR><TD ALIGN="LEFT">expected_loss, decision, card_ref  (migration 3)</TD></TR></TABLE>>];
+  audit [label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#FFFFFF"><TR><TD BGCOLOR="#DBEAFE" ALIGN="LEFT"><B>audit</B>  (case history)</TD></TR>
+   <TR><TD ALIGN="LEFT">audit_id INTEGER PK</TD></TR><TR><TD ALIGN="LEFT">case_id INTEGER FK -&gt; cases</TD></TR><TR><TD ALIGN="LEFT">action, from_status, to_status, note, actor, at</TD></TR></TABLE>>];
+  comments [label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#FFFFFF"><TR><TD BGCOLOR="#DBEAFE" ALIGN="LEFT"><B>case_comments</B></TD></TR>
+   <TR><TD ALIGN="LEFT">id INTEGER PK</TD></TR><TR><TD ALIGN="LEFT">case_id INTEGER FK -&gt; cases</TD></TR><TR><TD ALIGN="LEFT">author, at, text</TD></TR></TABLE>>];
+  users [label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#FFFFFF"><TR><TD BGCOLOR="#DCFCE7" ALIGN="LEFT"><B>users</B></TD></TR>
+   <TR><TD ALIGN="LEFT">username TEXT PK</TD></TR><TR><TD ALIGN="LEFT">password_hash (PBKDF2)</TD></TR><TR><TD ALIGN="LEFT">role CHECK viewer|analyst|admin</TD></TR>
+   <TR><TD ALIGN="LEFT">active, failed_attempts, locked_until</TD></TR><TR><TD ALIGN="LEFT">must_change_pw, created_at, last_login</TD></TR></TABLE>>];
+  keys [label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#FFFFFF"><TR><TD BGCOLOR="#DCFCE7" ALIGN="LEFT"><B>api_keys</B></TD></TR>
+   <TR><TD ALIGN="LEFT">key_id TEXT PK</TD></TR><TR><TD ALIGN="LEFT">name, key_hash UNIQUE (hash of the key)</TD></TR><TR><TD ALIGN="LEFT">created_by, created_at, last_used, use_count, revoked_at</TD></TR></TABLE>>];
+  admin_audit [label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#FFFFFF"><TR><TD BGCOLOR="#DCFCE7" ALIGN="LEFT"><B>admin_audit</B></TD></TR>
+   <TR><TD ALIGN="LEFT">id INTEGER PK</TD></TR><TR><TD ALIGN="LEFT">at, actor, action, target, detail</TD></TR></TABLE>>];
+  watchlist [label=<<TABLE BORDER="1" CELLBORDER="0" CELLSPACING="0" CELLPADDING="3" BGCOLOR="#FFFFFF"><TR><TD BGCOLOR="#FEF3C7" ALIGN="LEFT"><B>watchlist</B></TD></TR>
+   <TR><TD ALIGN="LEFT">id INTEGER PK</TD></TR><TR><TD ALIGN="LEFT">kind CHECK card|merchant</TD></TR><TR><TD ALIGN="LEFT">value (SHA-256 of card, or merchant name)</TD></TR>
+   <TR><TD ALIGN="LEFT">label, reason, added_by, added_at, active</TD></TR><TR><TD ALIGN="LEFT">UNIQUE (kind, value)</TD></TR></TABLE>>];
+  audit -> cases [label="N : 1  (ON DELETE CASCADE)"]; comments -> cases [label="N : 1  (ON DELETE CASCADE)"];
+  cases -> watchlist [style=dashed, label="card_ref = hash of the card\n(logical link, not a foreign key)", constraint=false];
+}

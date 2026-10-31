@@ -1,0 +1,11 @@
+     20 tests/test_app.py
+     15 tests/test_platform.py
+      9 tests/test_auth.py
+      8 tests/test_api.py
+      7 tests/test_rules.py
+      7 tests/test_features.py
+      5 tests/test_explain.py
+      4 tests/test_decision.py
+      3 tests/test_cases.py
+      2 tests/test_bootstrap.py
+      1 tests/test_train_repro.py

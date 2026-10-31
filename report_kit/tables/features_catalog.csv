@@ -1,0 +1,29 @@
+feature,group,definition,source,mean_abs_shap,importance_rank
+amt,raw,"Transaction amount (currency units of the dataset, shown as EUR)",column amt,0.9573,1
+log_amt,amount,log(1 + amt),fraudlens/fraudkit/features.py:159,0.2028,14
+hour,time,Hour of day of the transaction (0-23),fraudlens/fraudkit/features.py:160,0.4492,8
+day_of_week,time,Day of week (Monday = 0),fraudlens/fraudkit/features.py:161,0.1912,15
+is_night,time,"1 if hour is in {22, 23, 0, 1, 2, 3}","fraudlens/fraudkit/features.py:14,162",0.6683,3
+dist_home_km,geo,"Haversine distance (km) between the cardholder's home (lat, long) and the merchant (merch_lat, merch_long)","fraudlens/fraudkit/features.py:81-84,163",0.1005,23
+age,demographic,(transaction time - date of birth) in days / 365.25,fraudlens/fraudkit/features.py:164,0.4442,9
+log_city_pop,demographic,log(1 + city_pop),fraudlens/fraudkit/features.py:165,0.4862,5
+merchant_te,merchant,"Smoothed target encoding of merchant: (sum_fraud + m * prior) / (count + m), m = 50; out-of-fold (5 folds) for fit rows, fitted on the fit split only",fraudlens/fraudkit/features.py:284-320,0.18,16
+n_txn_1h,velocity,Number of EARLIER transactions of the card in the previous 1 hour,"fraudlens/fraudkit/features.py:92-99,209-212,237",0.0279,26
+n_txn_24h,velocity,Earlier transactions of the card in the previous 24 hours,"fraudlens/fraudkit/features.py:211,238",0.1681,17
+amt_sum_24h,velocity,Sum of amounts of the card's earlier transactions in the previous 24 hours,"fraudlens/fraudkit/features.py:211,240",0.3672,11
+n_txn_7d,velocity,Earlier transactions of the card in the previous 7 days,"fraudlens/fraudkit/features.py:250,255",0.1554,19
+n_txn_30d,velocity,"Earlier transactions of the card in the previous 30 days (replaced the lifetime counter card_txn_count, which drifted)","fraudlens/fraudkit/features.py:212,239",0.4728,6
+avg_amt_1d,spending window,Mean amount of the card's earlier transactions in the last 1 day (NaN if none),fraudlens/fraudkit/features.py:256,0.5244,4
+avg_amt_7d,spending window,"Same, 7 days",fraudlens/fraudkit/features.py:257,0.2229,13
+avg_amt_30d,spending window,"Same, 30 days",fraudlens/fraudkit/features.py:258,0.1674,18
+amt_to_avg_30d,spending window,amt / avg_amt_30d,fraudlens/fraudkit/features.py:259,0.0927,24
+amt_to_card_mean,card profile,amt / mean of all the card's earlier amounts,fraudlens/fraudkit/features.py:169-174,0.1153,22
+amt_to_cat_mean,card profile,amt / mean of the card's earlier amounts in the same category,fraudlens/fraudkit/features.py:176-182,0.3692,10
+amt_log_z,card profile,(log(1+amt) - mean) / std of log(1+amount) over the card's earlier transactions (needs >= 2 earlier rows and std > 1e-6),fraudlens/fraudkit/features.py:260-267,0.1501,20
+first_time_category,card profile,1 if this is the card's first purchase in this category,fraudlens/fraudkit/features.py:184,0.0001,27
+hours_since_prev,sequence,Hours since the card's previous transaction,fraudlens/fraudkit/features.py:187-189,0.451,7
+geo_speed_kmh,geo,"Distance between the previous and the current merchant location / max(hours since previous, 1/60 h)",fraudlens/fraudkit/features.py:191-196,0.1499,21
+impossible_travel,geo,1 if geo_speed_kmh > 800 and the jump > 50 km,"fraudlens/fraudkit/features.py:15,198",0.0,28
+small_txn_24h,card testing,Number of the card's earlier transactions below 5 in the last 24 hours,"fraudlens/fraudkit/features.py:16,247,252,268",0.2564,12
+category,categorical,Merchant category (14 levels in the training file),column category,0.8903,2
+gender,categorical,Cardholder gender (see ethics note),column gender,0.0604,25

@@ -1,0 +1,24 @@
+column,pandas_dtype_in_csv,nulls_in_train,distinct_in_train,example
+Unnamed: 0,int64,0,1296675,0
+trans_date_trans_time,str,0,1274791,2019-01-01 00:00:18
+cc_num,int64,0,983,(not shown: personal data)
+merchant,str,0,693,"fraud_Rippin, Kub and Mann"
+category,str,0,14,misc_net
+amt,float64,0,52928,4.97
+first,str,0,352,(not shown: personal data)
+last,str,0,481,(not shown: personal data)
+gender,str,0,2,F
+street,str,0,983,(not shown: personal data)
+city,str,0,894,Moravian Falls
+state,str,0,51,NC
+zip,int64,0,970,28654
+lat,float64,0,968,36.0788
+long,float64,0,969,-81.1781
+city_pop,int64,0,879,3495
+job,str,0,494,"Psychologist, counselling"
+dob,str,0,968,1988-03-09
+trans_num,str,0,1296675,0b242abb623afc578575680df30655b9
+unix_time,int64,0,1274823,1325376018
+merch_lat,float64,0,1247805,36.011293
+merch_long,float64,0,1275745,-82.048315
+is_fraud,int64,0,2,0

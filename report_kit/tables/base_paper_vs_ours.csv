@@ -1,0 +1,6 @@
+setting,dataset,test_rows,precision_pct,recall_pct,false_alarms,source
+Paper as reported [Tanouz 2021],ULB (Kaggle creditcard),"~124, balanced",100.0,91.11,0,docs/Literature_Review_Fraud_Detection.docx Table 1; UNVERIFIED against the paper (paywalled)
+"Team's re-implementation, paper-style (Random Forest)",ULB,"247, balanced",94.68,86.41,5,same table; notebook has no saved outputs so NOT re-run in this kit
+"Random Forest, under-sampled training, real test",ULB,"56,962 (98 fraud)",4.3,91.84,2004,same table; NOT re-run in this kit
+"Random Forest + SMOTE, real test",ULB,"56,962 (98 fraud)",88.3,84.69,11,same table; NOT re-run in this kit
+FraudLens tuned LightGBM at the validated threshold,Sparkov simulated (Kaggle kartik2112),"555,719 (2,145 fraud)",83.52,95.9,406,fraudlens/artifacts/metrics.json -> test.at_threshold (different dataset: NOT directly comparable to the rows above)

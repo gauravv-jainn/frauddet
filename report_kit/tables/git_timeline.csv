@@ -1,0 +1,17 @@
+hash,date,author,subject,files_changed,insertions,deletions
+d490db0,2026-10-20,Gaurav Jain,"Credit card fraud detection mini project: notebook, FraudShield app, docs",9,1847,0
+7ddcf5e,2026-10-20,gauravv-jainn,"M0/M1: fraudlens scaffold, pinned env, config, Kaggle data loader",7,271,0
+df3077a,2026-10-20,gauravv-jainn,M2: leakage-free feature pipeline + tests,4,311,0
+b89f383,2026-10-20,gauravv-jainn,"M3: time-split leaderboard, Optuna tuning, calibration, money threshold, live rich training CLI",9,2511,1
+7e77aeb,2026-10-20,gauravv-jainn,"M4: SHAP reason codes with real numbers, risk bands, what-if + tests",3,403,0
+e665984,2026-10-20,gauravv-jainn,"M5: Streamlit app (6 pages), SQLite case queue, AppTest click-through",17,1693,301
+788cafb,2026-10-20,gauravv-jainn,"M6: demo mode, FastAPI /score with API key, Dockerfile",8,215,0
+d1613e0,2026-10-20,gauravv-jainn,"M7: README with real results, Playwright screenshots, progress log",11,317,0
+e406cda,2026-10-20,gauravv-jainn,Root README: link to fraudlens/,1,6,0
+3b4acd1,2026-10-20,gauravv-jainn,"Audit fixes + platform: auth/roles, hashed API keys, validated config, SQLite WAL + migrations",20,1519,190
+fbc2f86,2026-10-20,gauravv-jainn,"App: login, role-gated pages, Admin/Monitoring/Account pages, case assignment; fix UI bugs",13,1633,372
+c74513e,2026-10-20,gauravv-jainn,Drift monitoring finds non-stationary feature; atomic versioned artifacts; ops + docs,35,5669,1627
+173feb0,2026-10-20,gauravv-jainn,Policy-rule guardrail for model blind spots + viva report PDF,38,3392,223
+9b7be1a,2026-10-26,gauravv-jainn,"Decision logic v2, analyst workflow and UI redesign",56,4665,460
+ee5fcd8,2026-10-27,gauravv-jainn,"Model v3: research-based features, smooth calibration, 0-999 risk score",39,18128,1796
+f73d82a,2026-10-31,gauravv-jainn,Add Hugging Face Spaces deployment for the hosted demo,10,230,0

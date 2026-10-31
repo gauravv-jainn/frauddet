@@ -1,0 +1,48 @@
+# Glossary
+
+Standard definitions written for this kit; project-specific values (thresholds, parameters, results) are in `REPORT_FACTS.md`.
+
+- **Accuracy**: Share of all predictions that are correct. Misleading when fraud is 0.39% of rows, because 'approve everything' scores 99.6%.
+- **Precision**: Of the transactions flagged as fraud, the share that really are fraud: TP / (TP + FP).
+- **Recall (sensitivity)**: Of the real frauds, the share that were flagged: TP / (TP + FN).
+- **False alarm rate per 10,000 genuine**: FP / (FP + TN) x 10,000: how many genuine transactions are flagged per 10,000 genuine ones.
+- **PR-AUC (average precision)**: Area under the precision-recall curve; summarises how well the rare class is ranked. Preferred to ROC-AUC on imbalanced data.
+- **ROC-AUC**: Probability that a random fraud is ranked above a random genuine transaction; can look excellent even when precision is poor on rare classes.
+- **Brier score**: Mean squared difference between predicted probability and the 0/1 outcome; lower is better; measures calibration and sharpness together.
+- **Log-loss**: Average negative log of the probability given to the true class; punishes confident wrong predictions heavily.
+- **Calibration**: Making predicted probabilities match observed frequencies (of the transactions given 5%, about 5% should be fraud).
+- **Platt scaling**: Calibration by fitting a logistic regression on the logit of the raw model score.
+- **Isotonic regression**: Monotone step-function calibration; flexible but produces many tied values (here, scores stuck at 0 and 1).
+- **Beta calibration**: Logistic regression on log(p) and -log(1-p); a more flexible smooth calibrator.
+- **Reliability diagram**: Plot of mean predicted probability against observed fraud rate in probability bins.
+- **Bootstrap confidence interval**: Interval from re-computing a metric on many resamples (with replacement) of the test rows.
+- **Class imbalance**: One class (fraud) is very rare compared with the other.
+- **Under-sampling / SMOTE**: Ways to rebalance training data: drop majority rows / create synthetic minority rows by interpolation.
+- **Data leakage**: Using information in training or feature building that would not be available at prediction time.
+- **Time-based split**: Training on the past and testing on the future, instead of a random split.
+- **Target encoding (out-of-fold)**: Replacing a category by its smoothed fraud rate, computed on other folds so a row never uses its own label.
+- **Velocity feature**: Count or sum of a card's recent transactions in a time window (e.g. last hour).
+- **RFM windows**: Recency / frequency / monetary summaries over time windows, here counts and average amounts over 1, 7 and 30 days.
+- **Z-score**: How many standard deviations a value is above the mean of the card's own history.
+- **Haversine distance**: Great-circle distance between two latitude/longitude points.
+- **Gradient boosting / LightGBM**: An ensemble of decision trees built one after another, each correcting the previous ones; LightGBM is a fast implementation.
+- **Random forest**: An average of many decorrelated decision trees.
+- **Optuna / TPE**: Hyper-parameter search library; TPE is its Bayesian-style sampler that favours promising regions.
+- **Cross-validation**: Repeatedly training on part of the data and scoring on the held-out part to estimate performance.
+- **SHAP**: Method that splits a prediction into additive contributions of each feature, here in log-odds.
+- **Log-odds**: log(p / (1 - p)); the scale on which SHAP contributions add up.
+- **Risk score 0-999**: FraudLens reading aid: a linear rescaling of log-odds so that p = 1e-6 is 0 and p = 0.999 is 999.
+- **Review cost / expected loss**: Cost of an analyst reviewing one alert; expected loss of approving is probability x amount.
+- **Step-up verification**: Asking the cardholder for an extra check (for example a one-time code) before approving.
+- **Policy rule**: A fixed business rule that can raise a transaction's risk band regardless of the model.
+- **Watchlist**: List of blocked cards or watched merchants that forces a higher band.
+- **Case queue / SLA**: List of flagged transactions to work; SLA is the time within which a case should be handled (24 h here).
+- **PSI (population stability index)**: Measure of how much a distribution has shifted from a reference: < 0.10 stable, 0.10-0.25 moderate, >= 0.25 significant.
+- **Concept / data drift**: Change over time in the input data or in the relationship between inputs and fraud.
+- **WAL (write-ahead logging)**: SQLite journal mode that lets readers and a writer work at the same time.
+- **PBKDF2**: Password-hashing function that repeats a hash many times (600,000 here) with a random salt.
+- **RBAC**: Role-based access control: permissions are given to roles (viewer, analyst, admin), not to individuals.
+- **Rate limiting**: Capping how many requests a client may send per minute (120 per API key here).
+- **XSS / CSV injection**: Injecting script into a web page / a spreadsheet formula into an exported CSV; both are escaped or prefixed in the app.
+- **Pickle / joblib**: Python object serialisation format used for the model file; loading an untrusted file can run code.
+- **Sparkov**: Open-source generator of synthetic card transactions used to create the dataset.

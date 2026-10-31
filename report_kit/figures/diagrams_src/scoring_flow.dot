@@ -1,0 +1,17 @@
+// Life of one POST /v1/score request (api/main.py -> fraudkit). The Streamlit pages call the same fraudkit functions.
+digraph G {
+  rankdir=LR; fontname="Arial"; nodesep=0.3; ranksep=0.4;
+  node [fontname="Arial", fontsize=10.5, shape=box, style="rounded,filled", fillcolor="#FFFFFF", color="#475569"];
+  edge [fontname="Arial", fontsize=9, color="#475569"];
+  req   [label="1. Request\nJSON transactions\n+ X-API-Key", fillcolor="#F1F5F9"];
+  auth  [label="2. Checks\nAPI key (hashed),\nrate limit 120/min,\nbatch <= 1000,\nfield validation", fillcolor="#FEE2E2"];
+  feat  [label="3. Features\nbuilt from the card's\nearlier transactions\n(history.parquet)", fillcolor="#DBEAFE"];
+  lgbm  [label="4. LightGBM\nraw score", fillcolor="#DBEAFE"];
+  cal   [label="5. Platt calibration\nprobability p\n(never exactly 0 or 1)", fillcolor="#DBEAFE"];
+  score [label="6. Risk score 0-999\n(log-odds scale)\n+ model band", fillcolor="#DBEAFE"];
+  shap  [label="7. SHAP\nreason codes in\nplain English", fillcolor="#DCFCE7"];
+  rules [label="8. Policy rules\nmay only raise\nthe band", fillcolor="#EDE9FE"];
+  dec   [label="9. Decision\napprove / step_up /\nreview / block\n+ expected loss\n= p x amount", fillcolor="#FEF3C7"];
+  resp  [label="10. Response\nrequest_id,\nmodel_version,\nresults[]", fillcolor="#F1F5F9"];
+  req -> auth -> feat -> lgbm -> cal -> score -> shap -> rules -> dec -> resp;
+}
