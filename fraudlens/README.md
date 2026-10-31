@@ -113,6 +113,18 @@ docker compose up --build
 This runs the API on `127.0.0.1:8000` and the app on `127.0.0.1:8501`, as a non-root user with health checks. Users, keys
 and cases live in a named volume, and `./artifacts` is mounted read-only (train on the host first).
 
+### Hosted demo (Hugging Face Spaces)
+
+```bash
+uv pip install -r requirements-deploy.txt
+python scripts/deploy_space.py
+```
+
+This asks for a Write and a Read token from a free Hugging Face account, then puts the code in a public Docker Space and
+the model and data in a private dataset repo. Sign-in passwords are generated and saved to `deploy/credentials.txt`
+(git-ignored). The `demo` account is an analyst and `admin` is the administrator. The free tier has no persistent disk,
+so cases reset on restart, and a Space sleeps after a period without visitors (the next visit wakes it).
+
 ### Continuous integration
 
 `.github/workflows/fraudlens-ci.yml` runs `ruff check`, `ruff format --check` and `pytest` on every push that touches

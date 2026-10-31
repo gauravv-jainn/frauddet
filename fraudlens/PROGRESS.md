@@ -121,3 +121,9 @@ Machine: 32 logical CPUs, Windows 11, Python 3.11.15 (installed with uv; system 
 - **Risk score 0-999** on a log-odds scale (p = 1e-6 -> 0, p = 0.999 -> 999, ~33 points doubles the odds). A first rank-based version saturated at the decision threshold (threshold = score 998) and was replaced. Now: genuine median 25, fraud median 950, review threshold 551, High 625, Critical 707.
 - **Results** (same untouched test set): PR-AUC 0.9722 -> 0.9765 (CI 0.9719-0.9811), ROC-AUC 0.9978 -> 0.9995, precision 81.1% -> 83.5%, false alarms/10k 8.7 -> 7.3, recall 96.4% -> 95.9%, total cost 28,734 -> 30,137 (threshold chosen on validation moved 0.0238 -> 0.0837).
 - Final model version 20261026-184402-d37e9778 (metrics identical to run 20261025-233115-3abe0ebd; the final run's wall-clock time includes the machine sleeping). Tests: 79 passing.
+
+## M12 - Hosted demo deployment (done; going live needs the owner's Hugging Face account)
+- Target: free Hugging Face Docker Space. It offers 16 GB of RAM; the container used about 2.4 GB in a local run with the real artifacts, more than the 1 GB limit commonly quoted for Streamlit Community Cloud.
+- `scripts/deploy_space.py` uploads code to a public Space and the model and data to a private dataset repo (nothing added to GitHub).
+- `fraudkit/bootstrap.py` downloads the artifacts and creates the accounts at start-up, and refuses to start without passwords so a public URL can never show the first-run admin setup.
+- Verified locally in the built container: refuses to start without passwords, demo sign-in, dashboard, 500-row batch scoring. The download path and the live Space itself are not exercised until the first real deploy.

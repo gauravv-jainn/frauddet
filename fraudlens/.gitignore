@@ -14,3 +14,4 @@ artifacts/retrain_stdout.log
 artifacts/.*.tmp
 *.sqlite-wal
 *.sqlite-shm
+deploy/credentials.txt
